@@ -1,0 +1,15 @@
+/* Pandoc Specific Classes for C/Asm/Diff */
+.sourceCode .kw { color: #c678dd; font-weight: bold; } /* Keywords (mov, push, if, return) */
+.sourceCode .dt { color: #e5c07b; }                   /* Data Types (uint32_t, DWORD) */
+.sourceCode .st { color: #98c379; }                   /* Strings */
+.sourceCode .co { color: #5c6370; font-style: italic; }/* Comments */
+.sourceCode .va { color: #61afef; }                   /* Variables / Registers (rax, rdi) */
+.sourceCode .fu { color: #61afef; }                   /* Functions / Labels (.text, main) */
+.sourceCode .pp { color: #e06c75; }                   /* Preprocessor (#define, #include) */
+.sourceCode .cn { color: #d19a66; font-weight: bold; } /* Immediates / Hex / Constants (0x41414141) */
+.sourceCode .op { color: #56b6c2; }                   /* Operators (+, -, *, &, brackets) */
+
+/* Diff specific highlights */
+.sourceCode .gd { color: #e06c75; background-color: #3a272a; } /* Generic Delete (-) */
+.sourceCode .gi { color: #98c379; background-color: #2e3f2f; } /* Generic Insert (+) */
+.sourceCode .gu { color: #c678dd; font-weight: bold; }         /* Subproject/Header (@@ lines) */

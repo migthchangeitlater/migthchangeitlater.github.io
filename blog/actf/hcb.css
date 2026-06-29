@@ -1,0 +1,32 @@
+/* HTML comment box */
+
+#HCB_comment_box { max-width: 47rem; margin: 2rem auto; padding-top: 2rem; font-family: 'Cordata', monospace !important;  }
+#HCB_comment_box > h3 { display: none;  }
+label#hcb_file_label a.btn-secondary, .admin-link, .home-desc, #hcb_msg, .hcb-like {
+    display: none;
+}
+.hcb-wrapper-half { display: inline-block; width: 50%; max-width: 200px; vertical-align: text-top !important;  }
+.hcb-wrapper-half input { width: 100%; height: 2rem; padding: 0.5rem !important; vertical-align: text-top; }
+#hcb_form_name_container { padding-right: 10px; }
+#HCB_comment_box textarea, .hcb-wrapper-half input { font-family: 'Cordata', monospace !important; background: white; border: 2px inset white; }
+textarea { resize: vertical; }
+#HCB_comment_box blockquote { border: none; padding: 0 0 0 2px !important ;}
+#HCB_comment_box .comment { border: 1px dotted; padding: 0.5rem 1rem 1rem 1rem; margin: 1rem auto !important; }
+#HCB_comment_box .comment .comment { margin-bottom: 0 !important; }
+#HCB_comment_box .hcb-comment-body { font-size: 0.9rem !important; }
+.hcb-comment-tb button { color: teal !important; font-family: 'Cordata', monospace !important; font-weight: normal !important; padding: 2px !important; }
+.hcb-comment-tb button:hover, .hcb-comment-tb button:focus { color: white !important; background-color: teal !important; }
+#HCB_comment_box .author-name { font-weight: normal; letter-spacing: 4px; }
+#HCB_comment_box .author { margin-right: -5px !important; }
+#hcb_submit { padding: 0.5rem; color: black !important; background: whitesmoke !important; font-family: 'Cordata', monospace !important;  border: 2px outset whitesmoke !important; cursor: pointer; }
+#hcb_submit:hover { text-decoration: underline !important; }
+#hcb_submit:active { border: 2px inset whitesmoke !important; padding: 0.6rem 0.4rem 0.4rem 0.6rem; }
+
+@media (prefers-color-scheme: dark) {
+	#HCB_comment_box textarea, .hcb-wrapper-half input { color: white !important; background: darkslategrey; border: 2px inset darkslategrey; }
+	#HCB_comment_box textarea::placeholder, .hcb-wrapper-half input::placeholder { color: lightgrey !important; }
+	#hcb_submit { color: white !important; background: #4C5C5C !important; border: 2px outset #4C5C5C !important; }
+	#hcb_submit:active { border: 2px inset #4C5C5C !important; }
+	.hcb-comment-tb button { color: #b2d7c1 !important; }
+	.hcb-comment-tb button:hover, .hcb-comment-tb button:focus { color: darkslategrey !important; background-color: #b2d7c1 !important; }
+}

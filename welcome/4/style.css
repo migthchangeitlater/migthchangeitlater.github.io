@@ -1,0 +1,17 @@
+* {
+    box-sizing: border-box;
+}
+
+.column {
+    float: left;
+    width: 33.33%;
+    padding: 13px;
+    min-height: 350px;
+    border: 1px solid;
+    text-align: center;
+}
+.all-wors {
+    content: "";
+    display: table;
+    clear: both;
+}

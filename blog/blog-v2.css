@@ -1,0 +1,78 @@
+* { scrollbar-color: #53705f #23332a; }
+
+body { background: url(/img/star.gif); background-color: black; background-position: top -175px right; background-attachment: fixed; padding: 0 5px; overflow-Y: scroll; margin: 2vw; }
+
+main { background: radial-gradient(#eee,#eee,honeydew), honeydew; background-attachment: fixed; color: #23332a; outline: 1px dotted white; padding: 0; margin: 6px; height: calc(100vh - 4vw - 26px); overflow: auto; scrollbar-color: darkseagreen rgb(0,0,0,0); display: grid; grid-template-areas: "post nav" "comment nav"; grid-template-columns: 5fr 10rem; gap: 0 1rem; padding: 0 2rem; overflow-Y: scroll; overscroll-behavior: none; }
+
+article { width: fit-content; max-width: 45rem; margin: 0 auto; padding: calc(5vh + 1.5vw) 1rem 0 1rem; grid-area: post; }
+
+main:has(article) footer { grid-area: nav; background: white; width: 10rem; margin: 0 auto;  padding: calc(5vh + 1.5vw) 0 0 0; line-height: 1rem; position: relative; outline: 2px dotted white; }
+main:has(article) footer > div { position: sticky; top: calc(5vh + 1.5vw + 1.5rem); padding: 0 1rem 1rem 1rem; }
+main:has(article) footer p { font-size: 80%; margin: 1rem 0; }
+main:has(article) footer img + p, main:has(article) footer p:last-child { text-align: center; }
+main:has(article) footer a:hover, main:has(article) footer a:focus, .border2 a:hover, .border2 a:focus { background: mintcream; }
+main:has(article) footer div > img { display: block; border:1px dotted; outline:1px solid darkseagreen; outline-offset:2px; margin: 10px auto; max-width: calc(100% - 6px); }
+
+#HCB_comment_box { max-width: 43rem; width: calc(100% - 2rem); border-top: 1px dotted; grid-area: comment; margin: 1rem auto !important; padding-top: 2rem; height: fit-content !important; }
+#hcb_submit { background: gainsboro !important; }
+
+h1 { text-wrap: balance; }
+hr { margin: 1rem auto; border-top: 1px dotted #23332a; }
+article h2 { text-transform: none; }
+p, dt, li, summary { line-height: 1.35; }
+p { margin: 1.35rem 0; }
+dt { margin-top: 1.3rem; }
+sup { line-height: 0; }
+strong { font-weight: normal; font-size: 125%; }
+iframe, img { max-width: 100%; }
+main blockquote { border: 1px dotted; margin: 1rem 0; padding: 0 1rem; }
+img { max-width: 100%; }
+figcaption { text-align: right; font-size: 0.8rem; }
+textarea { width: 100%; field-sizing: content; min-height: 5rem; padding: 0.5rem; scrollbar-color: #eee white; }
+pre:has(code) { padding: 1rem; margin: 0.5rem 1rem; }
+
+hr + ol { font-size: 0.8rem; }
+
+.border { padding: 0; margin: 0; background: transparent; border-image:  url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABUAAAAVCAYAAACpF6WWAAAAsElEQVQ4T7VVQQ7AIAib/3/0JktqagOiRjnphhVKwfJcsHIB8+lA32q4pFTjPV9u/2yv/u0sFuYAZz7A39jX1uqPfYvUA40AkcURUKQ7DepxpJxq5CmnAPVS9hTCdHEGP9daKHWIJDeqgVsoPZBFqlkuV38kwW1JcdTK6zFQNAFf0KXPXTLDa0TFsPc1Ve3/VKeRRCKJLUuKJRLRsA2qk2h5SkXzcTRTU05PvgBXnpMPNvIIJdPd95YAAAAASUVORK5CYII=") 7 /  7px / 0 round; }
+body:has(article) > .border { max-width: 75rem; margin: auto; }
+
+table, .border2 { margin: 1rem auto; }
+.border2 { 
+	background: white;
+	border: 1px solid darkseagreen;
+	padding: 1px;
+	grid-template-columns: auto; margin: 1rem auto;
+}
+.border2 div, .border2 blockquote { border: 1px dotted; margin: 1px; padding: 5px; vertical-align: middle; }
+.border2 p { margin: 0 4px; }
+
+@media (prefers-color-scheme: dark) {
+	html { scrollbar-color: #53705f #23332a; }
+	body { color: #eee; }
+	main { background: radial-gradient(#425c4d,#23332a); background-attachment: fixed; color: #eee; scrollbar-color: #53705f rgb(0,0,0,0); }
+	main:has(article) footer { outline: 2px dotted #53705f; }
+	hr { border-color: #eee; }
+	table, input, textarea, .border2, main:has(article) footer { background: #53705f !important; }
+	textarea { scrollbar-color: #425c4d #53705f; }
+	th { background: #425c4d; }
+	code, pre:has(code) { background: #53705f; }
+	main:has(article) footer div > img { outline:1px solid yellowgreen; }
+	main:has(article) footer a:hover, main:has(article) footer a:focus, .border2 a:hover, .border2 a:focus { background: #425c4d; }
+	.border2 { border-color: yellowgreen; }
+	a:focus, a:hover { background: #425c4d; }
+	#hcb_submit { background: #23332a !important; border-color: ##23332a }
+}
+
+@media (max-width: 900px) {
+	body { margin: 0; padding: 0 2px; }
+	.border:has(article) { border-image-width: 0 7px; border-width: 0 7px; }
+	main { margin: 0 4px; padding: 0; grid-template-areas: "post" "nav" "comment"; grid-template-columns: 1fr; height: fit-content; gap: 1rem; overscroll-behavior: auto; }
+	main:has(article) footer { width: 100%; padding: 10px 0; height: fit-content; }
+	main:has(article) footer > div { position: static; padding: 0 1rem; margin: 0; }
+	main:has(article) footer p { margin: 10px 5px; }
+	main:has(article) footer div > img { display: none; }
+	body:has(article) h1 { font-size: 2rem; margin-top: 0; }
+	#HCB_comment_box { border-top: none; padding-top: 0; }
+}
+
+

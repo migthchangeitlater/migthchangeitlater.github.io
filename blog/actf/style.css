@@ -1,0 +1,236 @@
+/*right click on any text, inspect and click on fonts*/
+@font-face {
+  font-family: "Cordata"; 
+  src: url('/Px437_Cordata_PPC-400.woff2') format('woff2');
+}
+
+:root { 
+	font-size: 18px;
+	color-scheme: light dark;
+	accent-color: teal;
+}
+
+html { overscroll-behavior: none; }
+
+body {
+	color: black;
+	font-family: "Cordata", monospace;
+}
+
+.pixelart {
+     { 
+        image-rendering: pixelated;
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        scrollbar-color: cadetblue gainsboro;
+    }
+}
+h3, h2, h1 { font-weight: normal; }
+
+h3 { font-size: 1.25rem; line-height: 1; font-style: italic; }
+h2 { font-size: 1.45rem; line-height: 1; text-transform: uppercase; }
+h1 { font-size: 2.75rem; line-height: 1; }
+		 
+p, ol, ul, dl, code, details { font-size: 1rem; line-height: 1.3; }
+		 
+h1, h2, h3, h4, h5, h6, p, table, details, cite, blockquote, hr {
+	margin: 18px 0;
+}
+
+ul {
+	padding: 0px 10px 0px 20px;
+	margin: 0px;
+	text-align: left;
+	list-style-type: square; 
+}
+
+ul, dl {
+	margin: 18px 0 18px 18px;
+}
+
+ol { margin: 18px 0 18px 54px; }
+ol ol { margin: 0 0 0 54px; }
+
+ul ul, dd { 
+	margin: 0 0 0 18px;
+}
+
+details p { margin: 18px 0 18px 36px; }
+
+summary { cursor: pointer; }
+
+
+hr {
+	border: none;
+	border-top: 1px solid;
+}
+
+code {
+	background-color: white;
+	font-family: "Cordata", monospace; 
+	font-size: 80%;
+	padding: 1px 4px;
+}
+
+pre {
+	overflow-x: auto;
+	padding: 1px 4px;
+}
+
+pre:has(code) {
+	background: black;
+	padding: 0.5rem;
+	user-select: text;
+	max-width: 100%;
+}
+
+table {	border: 1px solid; }
+tr, td, th { border: 1px dotted; }
+td, th { padding: 5px; }
+
+textarea {
+	padding: 2px;
+	font-size: 80%;
+}
+
+cite { 
+	display: block;
+	text-align: right;
+}
+
+blockquote { border-left: 1px solid; padding-left: 14px; }
+
+details > summary {
+    list-style-type: '► ';
+}
+
+details[open] > summary {
+    list-style-type: '▼ ';
+}
+
+a {
+	color: #0e72c5;
+	padding: 2px 1px 0 1px;
+	text-decoration-style: dotted; 
+	text-underline-offset: 2px;
+}
+
+a[href^='http'] { text-decoration-style: solid; }
+a:visited {	color: teal; }
+a:hover, a:focus {
+	background: white;
+	outline: 1px dotted;
+	outline-offset: 1px;
+}
+
+a:has(img):hover, a:has(img):focus { outline: unset; }
+a[href^='http']:hover, a[href^='http']:focus { text-decoration-thickness: 2px; }
+a:focus-visible { outline: 2px solid; }
+a:active { color: inherit; }
+
+button, input, textarea {	
+	font-family: "Cordata", monospace;
+}
+
+img, iframe { max-width: 100%; }
+	
+.new { 
+	text-transform: uppercase;
+	text-shadow: 0 -1px yellow, 1px 0 yellow, 0 1px yellow, -1px 0 yellow;
+}
+
+.border { /* .rope from https://maxbittker.github.io/broider/ testing*/
+    border-image:  url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACoAAAAqCAYAAADFw8lbAAAA/0lEQVRYR+1Y0Q4DIQi7+/+P3vYwkxtRKbUmsnDPArVA4byvJN+dBOdVQNWZ6jH6coJYG+98cxe1+zn/F0CXGHhkxWN8FAdmNB1Qy0j0AmiNNr8tXpjR44Ha5t+luaMahhk9HmgD2K0VtZB31KGbuVk6C+ggK1NiUjMKdaGwVqF4kVl/rDxNJ8UGRmWTaTejBVSVfStLy0tJpf6bGrpGj19KIAFWFejHDxQv9QitNc8pl9qeVP1ENxNkqEK50vWjkYb+n4/u4L0H0IJvDY8HauUKZYy1o5cSNiBrFwaKMue91rElQ7+UsAFZOxeoUHl0rnYtwzqEZlmVO1Y7TMPoG5mTaCv7AlQyAAAAAElFTkSuQmCC') 14 /  14px / 0 round;
+    border-width:  14px;
+    border-style:  solid;
+  }
+.border { /* .rope from https://maxbittker.github.io/broider/ */
+	border: 7px solid transparent;
+	border-image:  url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABUAAAAVCAYAAACpF6WWAAAAtklEQVQ4T7VV2xHAIAjTzToao3Wz9vigFyMoZ7V/VIghPKzlwFcPYJYG9BJ57JJbpKKNl+uZ2uxvPh+oOpgzBuA/CzIw9jd7CBoBWhZbQJGhl1nH1NOINWXmU00N1EvZ6xBkyhp3mnpFmIEyIbdQrNcW0IwUqUKNnKKpY12X+xQviFqs0VQDcARXOkExhrPvsYp2AxKYjmnUYr8KFbXXMihqHBUIN1dq9nkf8E5Nzf6uV+DIc/ICR9UIJTV+2f0AAAAASUVORK5CYII=") 7 /  7px / 0 round;
+	background-color: rgb(255, 255, 255, 90%); 
+	padding: 18px 36px;
+}
+
+a.border:hover, a.border:focus { 
+    border-image:  url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABUAAAAVCAYAAACpF6WWAAAAsElEQVQ4T7VVQQ7AIAib/3/0JktqagOiRjnphhVKwfJcsHIB8+lA32q4pFTjPV9u/2yv/u0sFuYAZz7A39jX1uqPfYvUA40AkcURUKQ7DepxpJxq5CmnAPVS9hTCdHEGP9daKHWIJDeqgVsoPZBFqlkuV38kwW1JcdTK6zFQNAFf0KXPXTLDa0TFsPc1Ve3/VKeRRCKJLUuKJRLRsA2qk2h5SkXzcTRTU05PvgBXnpMPNvIIJdPd95YAAAAASUVORK5CYII=") 7 /  7px / 0 round;
+	color: white;
+	background: cadetblue;
+	outline: unset;
+}
+
+.clearfix::after {
+	content: "";
+	clear: both;
+	display: table;
+}
+
+::selection { color: white;	background: cadetblue; }
+
+@media screen and (max-width: 600px){
+	
+	h1, h2, h3, h4, h5, h6, p, table, details, cite, blockquote, hr {
+		margin: 16px 0;
+	}
+	ul, dl { margin: 16px 0 16px 16px; }
+	ol { margin: 16px 0 16px 48px; }
+	ol ol { margin: 0 0 0 48px; }
+	ul ul, dd { margin: 0 0 0 16px;	}
+	details p { margin: 16px 0 16px 32px; }	
+	p, ol, ul, dl, details, table, figcaption { font-size: 0.9rem; }
+}
+
+@media (prefers-color-scheme: dark) {
+	* { scrollbar-color: cadetblue darkslategrey; }
+	body { color: #eee; }
+	/*.border { background-color: rgb(0,20,20,77.5%); border-color: darkslategrey; }*/
+    /*    background-color: rgba(67, 9, 11, 0.78);
+     *
+     *
+     */
+	.border { background-color: rgb(15,23,42,0.65); backdrop-filter: blur(2px); border-color: darkslategrey; }
+	.new, code { color: black; }
+	code, textarea, pre:has(code) { color: white; background: rgb(0, 0, 0, 0.0); backdrop-filter: blur(4px); }
+	a { color: lightblue; }
+	a:visited { color: #b2d7c1; }
+	a:hover, a:focus { background: darkslategrey; }
+	a.border:hover, a.border:focus { background: darkslategrey; /* border-image:  url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABUAAAAVCAYAAACpF6WWAAAAtklEQVQ4T7VV2xHAIAjTzToao3Wz9vigFyMoZ7V/VIghPKzlwFcPYJYG9BJ57JJbpKKNl+uZ2uxvPh+oOpgzBuA/CzIw9jd7CBoBWhZbQJGhl1nH1NOINWXmU00N1EvZ6xBkyhp3mnpFmIEyIbdQrNcW0IwUqUKNnKKpY12X+xQviFqs0VQDcARXOkExhrPvsYp2AxKYjmnUYr8KFbXXMihqHBUIN1dq9nkf8E5Nzf6uV+DIc/ICR9UIJTV+2f0AAAAASUVORK5CYII=") 7 /  7px / 0 round; */}
+	a:active { color: inherit; }
+}
+
+.sidebar {
+  width: 300px;
+  position: absolute;
+  top: 20%;
+  right: 1%;
+  padding-top: 40px;
+}
+.sidebar div {
+  padding: 8px;
+  font-size: 24px;
+  display: block;
+}
+.body-text {
+  margin-left: 150px;
+  font-size: 18px;
+}
+
+.profile {
+  height: 300px;
+  width: 300px;
+  position: absolute;
+  top: 12%;
+  left: 1%;
+  padding-top: 40px;
+}
+.profile div {
+  padding: 8px;
+  font-size: 24px;
+  display: block;
+}
+
+.profile img {
+    width: 100%;
+    height: auto;
+
+}

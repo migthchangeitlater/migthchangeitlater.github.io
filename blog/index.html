@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+	<title>web log</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<meta name="description" content="list of my 'blog posts'" />
+    <link href="style.css" rel="stylesheet" type="text/css" media="all" />
+    <link href="blog-v2.css" rel="stylesheet" type="text/css" media="all" />
+	<link rel="alternate" type="application/rss+xml" title="whitebeltsupremacy" href="../feed.xml" />
+  <style>
+	h1 { margin: 4rem 0 3rem 0; font-style: italic;  text-transform: uppercase; font-size: 72px; text-align: center; color: white; filter: drop-shadow(2px 2px 0 darkslategrey);  }
+	ul.border { width: 37rem; max-width: 100%; margin: 2rem auto; }
+	li, .box > div { outline: 1px dotted white; margin: 6px; background: rgb(255,255,255,0.95); }
+	.box { width: 26rem; max-width: 90%; margin: 2rem auto; font-size: 75%; }
+	.box.fit { max-width: fit-content; }
+	.box > div { padding: 10px; }
+	.box nav, .box p { margin: 0 5px; }
+	fieldset { margin: 2px 0; display: flex; flex-wrap: wrap; gap: 5px; padding: 2px 5px 5px 5px; border:0; align-items: center; justify-content: end }
+	fieldset label { border: 1px dotted; padding: 4px 6px 3px 6px; flex: 1; }
+	fieldset label:has(input:checked) { color: white; background: cadetblue; }
+	fieldset label:hover { background: white; }
+	input { position: absolute; opacity: 0; }
+	legend { margin: 5px 5px 5px 0; float: left; }
+	li { display: grid;  grid-template-areas: "date title count tags"; grid-template-columns: 82px 1fr 0 185px; gap: 5px; padding: 10px;  }
+	li b { margin: 0 5px; grid-area: title; text-wrap: balance; font-weight: normal; }
+	li time { grid-area: date; }
+	li span:not(:last-child) { grid-area: count; overflow: hidden; white-space: nowrap; }
+	li span:last-child { grid-area: tags; opacity: 0.75; }
+	li time, li span { margin: 4px; font-size: 75%; }
+	li > * {  text-align: left; }
+	footer { position: absolute; top: -2rem; right: -9rem; text-align: center; }
+	div:has(footer) { position: relative; width: fit-content; max-width: 100%; margin: 0 auto; }
+	div.mobile { display:none; text-align: center; }
+
+	body:has(#long:checked) li:not(:has(.long)),
+	body:has(#med:checked) li:not(:has(.med)),
+	body:has(#short:checked) li:not(:has(.short)), 
+	body:has(#pick:checked) li:not(:has(.pick)), 
+	body:has(#qna:checked) li:not(:has(.qna)),
+	body:has(#meta:checked) li:not(:has(.meta)),
+	body:has(#web:checked) li:not(:has(.web)),
+	body:has(#science:checked) li:not(:has(.science)),
+	body:has(#personal:checked) li:not(:has(.personal)),
+	body:has(#nature:checked) li:not(:has(.nature)) { 
+		display: none;
+	}
+	
+	@media (max-width: 1035px) {
+		footer.mobile { display: none; }
+		div.mobile { display: block; }
+	}
+	@media (max-width: 600px) {
+		h1 { margin: 3rem 0 2rem 0; }
+		li { display: grid; grid-template-areas: "date title title" ". tags count"; grid-template-columns: 72px 1fr 0; padding: 8px; gap: 0; }
+		li span { margin: 0 5px; }
+	}
+	@media (prefers-color-scheme: dark) {
+		h2 { filter: drop-shadow(2px 2px 0 darkslategrey) drop-shadow( -2px 2px 0 darkslategrey) drop-shadow( 2px -2px 0 darkslategrey) drop-shadow( -2px -2px 0 darkslategrey); }
+		li, .box > div { background: #0d051e99; }
+		fieldset label:hover { background: darkslategrey; }
+		a:has(img):hover, a:has(img):focus { background: #b2d7c1; }
+	}
+  </style>
+  </head>
+<body>
+
+	<h1>web log</h1>
+	
+	<div class="box border fit mobile">
+		<div>
+			<a href="../feed.xml"><img src="../88x31/rss.png" alt="subscribe with RSS"></a>
+			<p><small><a href="../">return home</a></small></p>
+		</div>
+	</div>
+	
+	<div class="box border">
+
+		<div>
+		<p>filter by...</p>
+		<fieldset>
+			<legend>topic:</legend>
+			<span><label for="alltopic"><input type="radio" id="alltopic" name="topic" /> all</label></span>
+			<span><label for="exploit"><input type="radio" id="nature" name="topic" /> exploit</label></span>
+			<span><label for="linux"><input type="radio" id="science" name="topic" /> linux</label></span>
+			<span><label for="personal"><input type="radio" id="personal" name="topic" /> personal</label></span>
+			<span><label for="kernel"><input type="radio" id="web" name="topic" /> kernel</label></span>
+			<span><label for="ctf"><input type="radio" id="web" name="topic" /> ctf</label></span>
+		</fieldset>
+		<fieldset>
+			<legend>word count:</legend>
+			<span><label for="alllength"><input type="radio" id="alllength" name="length" /> any</label></span>
+			<span><label for="long"><input type="radio" id="long" name="length" /> &gt;700</label></span>
+			<span><label for="med"><input type="radio" id="med" name="length" /> 700-300</label></span>
+			<span><label for="short"><input type="radio" id="short" name="length" /> &lt;300</label></span>
+		</fieldset>
+		<fieldset>
+			<legend>special category:</legend>
+			<span><label for="none"><input type="radio" id="none" name="special"/> none</label></span>
+			<span><label for="pick"><input type="radio" id="pick" name="special"/> author's pick</label></span>
+			<span><label for="qna"><input type="radio" id="qna" name="special" /> question + answer</label></span>
+		</fieldset>		
+		</div>
+	
+	</div>
+	
+	<div>
+	
+	<ul class="border">
+	
+		<!-- boring posts are commented out, but the pages are still accessible through the prev/next links on neighboring posts, or by copying the URL from here -->
+
+
+		<li><time datetime="2026-04-03">2026/04/03</time> <b><a href="actf">TEST</a></b> <span class="med">500 words,</span> <span class="exploit ctf linux kernel">ctf, kernel</span></li>	
+
+		<li><time datetime="2026-04-03">2026/04/03</time> <b><a href="actf">TEST</a></b> <span class="med">500 words,</span> <span class="exploit ctf linux kernel">ctf, kernel</span></li>	
+
+		<li><time datetime="2026-04-03">2026/04/03</time> <b><a href="actf">TEST</a></b> <span class="med">500 words,</span> <span class="exploit ctf linux kernel">ctf, kernel</span></li>	
+
+		<li><time datetime="2026-04-03">2026/04/03</time> <b><a href="actf">TEST</a></b> <span class="med">500 words,</span> <span class="exploit ctf linux kernel">ctf, kernel</span></li>	
+		
+        <li><time datetime="2026-04-03">2026/04/03</time> <b><a href="actf">Internal Academy CTF</a></b> <span class="med">500 words,</span> <span class="exploit ctf linux kernel">ctf, kernel</span></li>	
+
+	</ul>
+	
+	<footer class="box border fit mobile">
+		<div>
+			<a href="../feed.xml"><img src="../88x31/rss.png" alt="subscribe with RSS"></a>
+			<p><small><a href="/main">return home</a></small></p>
+		</div>
+	</footer>
+	
+	</div>
+
+</body>
+</html>
