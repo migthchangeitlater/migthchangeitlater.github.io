@@ -291,7 +291,7 @@ At this point we effectively have an arbitrary write primitive in the kernel wit
 
 ## 0x04. Beating Dio
 
-An outstanding stand user (blue belt) got the 🩸 and solved the challenge within a few days. Much congrats to [whoami_mr_x!](https://pwn.college/hacker/121187), they were the only one who managed to beat Dio. 
+An outstanding stand user (blue belt) got the 🩸 and solved the challenge within a few days. Much congrats to [whoami_mr_x!](https://x.com/whoami_mr_x), they were the only one who managed to beat Dio. 
 
 <center>
 <img src=/blog/actf/pics/dio-wine.gif>
